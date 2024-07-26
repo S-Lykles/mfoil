@@ -595,7 +595,7 @@ def get_ueinvref(M):
     #   Uses gamref for the airfoil, uewiref for the wake (if exists)
   
     assert len(M.isol.gam) > 0, 'No inviscid solution'
-    uearef = np.vstack((M.isol.sgnue*M.isol.gamref[:,0], M.isol.sgnue*m.isol.gamref[:,1]))
+    uearef = np.vstack((M.isol.sgnue*M.isol.gamref[:,0], M.isol.sgnue*M.isol.gamref[:,1]))
     if (M.oper.viscous) and (M.wake.N > 0):
         uewref = M.isol.uewiref; # wake
         uewref[0,:] = uearef[-1,:]; # continuity of upper surface and wake
