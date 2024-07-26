@@ -660,7 +660,7 @@ def solve_inviscid(M: Mfoil):
 
     Notes
     -----
-    - Uses the angle of attack in M.oper.gamma
+    - Uses the angle of attack in M.oper.alpha
     - Also initializes thermo variables for normalization
     """
 
