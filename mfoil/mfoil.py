@@ -26,7 +26,6 @@
 
 import numpy as np
 from numpy import ndarray as NDArray
-from scipy.interpolate import CubicSpline, interp1d
 from scipy import sparse
 import matplotlib.pyplot as plt
 from matplotlib import gridspec
@@ -34,26 +33,12 @@ import copy
 from typing import Tuple, Optional, Any
 from mfoil.utils import vprint, sind, cosd, norm2, dist, atan2
 from mfoil.panel import panel_linvortex_stream, panel_constsource_stream, TE_info, panel_linsource_stream, panel_constsource_velocity, panel_linvortex_velocity, panel_linsource_velocity
+from mfoil.geometry import Geom, Panel, naca_points, set_coords, make_panels, mgeom_flap, mgeom_addcamber, mgeom_derotate, space_geom
+
+# -------------------------------------------------------------------------------
 
 
 # -------------------------------------------------------------------------------
-class Geom:  # geometry
-    def __init__(self):
-        self.chord = 1.0  # chord length
-        self.wakelen = 1.0  # wake extent length, in chords
-        self.npoint = 1  # number of geometry representation points
-        self.name = "noname"  # airfoil name, e.g. NACA XXXX
-        self.xpoint = []  # point coordinates, [2 x npoint]
-        self.xref = np.array([0.25, 0])  # moment reference point
-
-
-# -------------------------------------------------------------------------------
-class Panel:  # paneling
-    def __init__(self):
-        self.N = 0  # number of nodes
-        self.x = []  # node coordinates, [2 x N]
-        self.s = []  # arclength values at nodes
-        self.t = []  # dx/ds, dy/ds tangents at nodes
 
 
 # -------------------------------------------------------------------------------
@@ -201,8 +186,8 @@ class Mfoil:
         if coords is not None:
             set_coords(self, coords)
         else:
-            naca_points(self, naca)
-        make_panels(self, npanel, None)
+            self.geom = naca_points(naca)
+        self.make_panels(npanel)
 
     # set operating conditions
     def setoper(self, alpha=None, cl=None, Re=None, Ma=None, visc=None):
@@ -220,23 +205,28 @@ class Mfoil:
             if visc is not self.oper.viscous:
                 clear_solution(self)
             self.oper.viscous = visc
+            
+    def make_panels(self, npanel, stgt=None):
+        self.foil = make_panels(self.geom, npanel, stgt)
+        clear_solution(self)
 
     # solve current point
-    def solve(M):
-        if M.oper.viscous:
-            solve_viscous(M)
+    def solve(self):
+        if self.oper.viscous:
+            solve_viscous(self)
         else:
-            solve_inviscid(M)
+            solve_inviscid(self)
 
     # geometry functions
-    def geom_flap(M, xzhinge, eta):
-        mgeom_flap(M, xzhinge, eta)  # add a flap
+    def geom_flap(self, xzhinge, eta):
+        self.foil = mgeom_flap(self.geom, self.foil.N, xzhinge, eta)
+        clear_solution(self)
 
-    def geom_addcamber(M, zcamb):
-        mgeom_addcamber(M, zcamb)  # increment camber
+    def geom_addcamber(self, zcamb):
+        self.foil = mgeom_addcamber(self.geom, self.foil.N, zcamb)  # increment camber
 
-    def geom_derotate(M):
-        mgeom_derotate(M)  # derotate: make chordline horizontal
+    def geom_derotate(self):
+        self.foil = mgeom_derotate(self.geom, self.foil.N)  # derotate: make chordline horizontal
 
     # derivative pinging
     def ping(M):
@@ -799,418 +789,6 @@ def rebuild_isol(M):
         identify_surfaces(M)
         calc_ue_m(M)  # rebuild matrices due to changed wake geometry
 
-
-# ============ PANELING  ==============
-
-
-# -------------------------------------------------------------------------------
-def make_panels(M, npanel, stgt):
-    # places panels on the current airfoil, as described by M.geom.xpoint
-    # INPUT
-    #   M      : mfoil class
-    #   npanel : number of panels
-    #   stgt   : optional target s values (e.g. for adaptation), or None
-    # OUTPUT
-    #   M.foil.N : number of panel points
-    #   M.foil.x : coordinates of panel nodes (2xN)
-    #   M.foil.s : arclength values at nodes (1xN)
-    #   M.foil.t : tangent vectors, not normalized, dx/ds, dy/ds (2xN)
-    # DETAILS
-    #   Uses curvature-based point distribution on a spline of the points
-
-    clear_solution(M)  # clear any existing solution
-    Ufac = 2  # uniformity factor (higher, more uniform paneling)
-    TEfac = 0.1  # Trailing-edge factor (higher, more TE resolution)
-    M.foil.x, M.foil.s, M.foil.t = spline_curvature(
-        M.geom.xpoint, npanel + 1, Ufac, TEfac, stgt
-    )
-    M.foil.N = M.foil.x.shape[1]
-
-
-# ============ GEOMETRY ==============
-
-
-# -------------------------------------------------------------------------------
-def mgeom_flap(M, xzhinge, eta):
-    # deploys a flap at hinge location xzhinge, with flap angle eta
-    # INPUTS
-    #   M       : mfoil class containing an airfoil
-    #   xzhinge : flap hinge location (x,z) as numpy array
-    #   eta     : flap angle, positive = down, degrees
-    # OUTPUTS
-    #   M.foil.x : modified airfoil coordinates
-
-    X = M.geom.xpoint
-    N = X.shape[1]  # airfoil points
-    xh = xzhinge[0]  # x hinge location
-
-    # identify points on flap
-    If = np.nonzero(X[0, :] > xh)[0]
-
-    # rotate flap points
-    R = np.array([[cosd(eta), sind(eta)], [-sind(eta), cosd(eta)]])
-    for i in range(len(If)):
-        X[:, If[i]] = xzhinge + R @ (X[:, If[i]] - xzhinge)
-
-    # remove flap points to left of hinge
-    I = If[X[0, If] < xh]
-    I = np.setdiff1d(np.arange(N), I)
-
-    # re-assemble the airfoil; note, chord length is *not* redefined
-    M.geom.xpoint = X[:, I]
-    M.geom.npoint = M.geom.xpoint.shape[1]
-
-    # repanel
-    if M.foil.N > 0:
-        make_panels(M, M.foil.N - 1, None)
-
-    # clear the solution
-    clear_solution(M)
-
-
-# -------------------------------------------------------------------------------
-def mgeom_addcamber(M, xzcamb):
-    # adds camber to airfoil from given coordinates
-    # INPUTS
-    #   M       : mfoil class containing an airfoil
-    #   xzcamb  : (x,z) points on camberline increment, 2 x Nc
-    # OUTPUTS
-    #   M.foil.x : modified airfoil coordinates
-
-    if xzcamb.shape[0] > xzcamb.shape[1]:
-        xzcamb = np.transpose(xzcamb)
-
-    X = M.geom.xpoint  # airfoil points
-
-    # interpolate camber delta, add to X
-    dz = interp1d(
-        xzcamb[0, :],
-        xzcamb[1, :],
-        "cubic",
-    )(X[0, :])
-    X[1, :] += dz
-
-    # store back in M.geom
-    M.geom.xpoint = X
-    M.geom.npoint = M.geom.xpoint.shape[1]
-
-    # repanel
-    if M.foil.N > 0:
-        make_panels(M, M.foil.N - 1, None)
-
-    # clear the solution
-    clear_solution(M)
-
-
-# -------------------------------------------------------------------------------
-def mgeom_derotate(M):
-    # derotates airfoil about leading edge to make chordline horizontal
-    # INPUTS
-    #   M       : mfoil class containing an airfoil
-    # OUTPUTS
-    #   M.foil.x : modified airfoil coordinates
-
-    X = M.geom.xpoint
-    N = X.shape[1]  # airfoil points
-
-    xLE = X[:, np.argmin(X[0, :])]  # LE point
-    xTE = 0.5 * (X[:, 0] + X[:, N - 1])  # TE "point"
-
-    theta = atan2(xTE[1] - xLE[1], xTE[0] - xLE[0])  # rotation angle
-    R = np.array([[np.cos(theta), np.sin(theta)], [-np.sin(theta), np.cos(theta)]])
-    for i in range(N):
-        X[:, i] = xLE + R @ (X[:, i] - xLE)
-
-    # store back in M.geom
-    M.geom.xpoint = X
-    M.geom.npoint = M.geom.xpoint.shape[1]
-
-    # repanel
-    if M.foil.N > 0:
-        make_panels(M, M.foil.N - 1, None)
-
-    # clear the solution
-    clear_solution(M)
-
-
-# -------------------------------------------------------------------------------
-def space_geom(dx0, L, Np):
-    # spaces Np points geometrically from [0,L], with dx0 as first interval
-    # INPUTS
-    #   dx0 : first interval length
-    #   L   : total domain length
-    #   Np  : number of points, including endpoints at 0,L
-    # OUTPUTS
-    #   x   : point locations (1xN)
-
-    assert Np > 1, "Need at least two points for spacing."
-    N = Np - 1  # number of intervals
-    # L = dx0 * (1 + r + r^2 + ... r^{N-1}) = dx0*(r^N-1)/(r-1)
-    # let d = L/dx0, and for a guess, consider r = 1 + s
-    # The equation to solve becomes d*s  = (1+s)^N - 1
-    # Initial guess: (1+s)^N ~ 1 + N*s + N*(N-1)*s^2/2 + N*(N-1)*(N-2)*s^3/3
-    d = L / dx0
-    a = N * (N - 1.0) * (N - 2.0) / 6.0
-    b = N * (N - 1.0) / 2.0
-    c = N - d
-    disc = max(b * b - 4.0 * a * c, 0.0)
-    r = 1 + (-b + np.sqrt(disc)) / (2 * a)
-    for k in range(10):
-        R = r**N - 1 - d * (r - 1)
-        R_r = N * r ** (N - 1) - d
-        dr = -R / R_r
-        if abs(dr) < 1e-6:
-            break
-        r -= R / R_r
-    return np.r_[0, np.cumsum(dx0 * r ** (np.array(range(N))))]
-
-
-# -------------------------------------------------------------------------------
-def set_coords(M, X):
-    # sets geometry from coordinate matrix
-    # INPUTS
-    #   M : mfoil class
-    #   X : matrix whose rows or columns are (x,z) points, CW or CCW
-    # OUTPUTS
-    #   M.geom.npoint : number of points
-    #   M.geom.xpoint : point coordinates (2 x npoint)
-    #   M.geom.chord  : chord length
-    # DETAILS
-    #   Coordinates should start and end at the trailing edge
-    #   Trailing-edge point must be repeated if sharp
-    #   Points can be clockwise or counter-clockwise (will detect and make CW)
-
-    if X.shape[0] > X.shape[1]:
-        X = X.transpose()
-
-    # ensure CCW
-    A = 0.0
-    for i in range(X.shape(1)):
-        A += (X[0, i] - X[0, i - 1]) * (X[1, i] + X[1, i - 1])
-    if A < 0:
-        X = np.fliplr(X)
-
-    # store points in M
-    M.geom.npoint = X.shape(1)
-    M.geom.xpoint = X
-    M.geom.chord = max(X[0, :]) - min(X[0, :])
-
-
-# -------------------------------------------------------------------------------
-def naca_points(M, digits):
-    # calculates coordinates of a NACA 4-digit airfoil, stores in M.geom
-    # INPUTS
-    #   M      : mfoil class
-    #   digits : character array containing NACA digits
-    # OUTPUTS
-    #   M.geom.npoint : number of points
-    #   M.geom.xpoint : point coordinates (2 x npoint)
-    #   M.geom.chord  : chord length
-    # DETAILS
-    #   Uses analytical camber/thickness formulas
-
-    M.geom.name = "NACA " + digits
-    N, te = 100, 1.5  # points per side and trailing-edge bunching factor
-    f = np.linspace(0, 1, N + 1)  # linearly-spaced points between 0 and 1
-    x = (
-        1 - (te + 1) * f * (1 - f) ** te - (1 - f) ** (te + 1)
-    )  # bunched points, x, 0 to 1
-
-    # normalized thickness, gap at trailing edge (use -.1035*x**4 for no gap)
-    t = 0.2969 * np.sqrt(x) - 0.126 * x - 0.3516 * x**2 + 0.2843 * x**3 - 0.1015 * x**4
-    tmax = float(digits[-2:]) * 0.01  # max thickness
-    t = t * tmax / 0.2
-
-    if len(digits) == 4:
-        # 4-digit series
-        m, p = float(digits[0]) * 0.01, float(digits[1]) * 0.1
-        c = m / (1 - p) ** 2 * ((1 - 2.0 * p) + 2.0 * p * x - x**2)
-        for i in range(len(x)):
-            if x[i] < p:
-                c[i] = m / p**2 * (2 * p * x[i] - x[i] ** 2)
-    elif len(digits) == 5:
-        # 5-digit series
-        n = float(digits[1])
-        valid = digits[0] == "2" and digits[2] == "0" and n > 0 and n < 6
-        assert valid, "5-digit NACA must begin with 2X0, X in 1-5"
-        mv = [0.058, 0.126, 0.2025, 0.29, 0.391]
-        m = mv(n)
-        cv = [361.4, 51.64, 15.957, 6.643, 3.23]
-        cc = cv(n)
-        c = (cc / 6.0) * (x**3 - 3 * m * x**2 + m**2 * (3 - m) * x)
-        for i in range(len(x)):
-            if x[i] > m:
-                c[i] = (cc / 6.0) * m**3 * (1 - x(i))
-    else:
-        raise ValueError("Provide 4 or 5 NACA digits")
-
-    zu = c + t
-    zl = c - t  # upper and lower surfaces
-    xs = np.concatenate((np.flip(x), x[1:]))  # x points
-    zs = np.concatenate((np.flip(zl), zu[1:]))  # z points
-
-    # store points in M
-    M.geom.npoint = len(xs)
-    M.geom.xpoint = np.vstack((xs, zs))
-    M.geom.chord = max(xs) - min(xs)
-
-
-# -------------------------------------------------------------------------------
-def spline_curvature(Xin, N, Ufac, TEfac, stgt):
-    # Splines 2D points in Xin and samples using curvature-based spacing
-    # INPUT
-    #   Xin   : points to spline
-    #   N     : number of points = one more than the number of panels
-    #   Ufac  : uniformity factor (1 = normal; > 1 means more uniform distribution)
-    #   TEfac : trailing-edge resolution factor (1 = normal; > 1 = high; < 1 = low)
-    #   stgt  : optional target s values
-    # OUTPUT
-    #   X  : new points (2xN)
-    #   S  : spline s values (N)
-    #   XS : spline tangents (2xN)
-
-    # min/max of given points (x-coordinate)
-    xmin, xmax = min(Xin[0, :]), max(Xin[0, :])
-
-    # spline given points
-    PP = spline2d(Xin)
-
-    # curvature-based spacing on geom
-    nfine = 501
-    s = np.linspace(0, PP["X"].x[-1], nfine)
-    xyfine = splineval(PP, s)
-    PPfine = spline2d(xyfine)
-
-    if stgt is None:
-        s = PPfine["X"].x
-        sk = np.zeros(nfine)
-        xq, wq = quadseg()
-        for i in range(nfine - 1):
-            ds = s[i + 1] - s[i]
-            st = xq * ds
-            px = PPfine["X"].c[:, i]
-            xss = 6.0 * px[0] * st + 2.0 * px[1]
-            py = PPfine["Y"].c[:, i]
-            yss = 6.0 * py[0] * st + 2.0 * py[1]
-            skint = 0.01 * Ufac + 0.5 * np.dot(wq, np.sqrt(xss * xss + yss * yss)) * ds
-
-            # force TE resolution
-            xx = (0.5 * (xyfine[0, i] + xyfine[0, i + 1]) - xmin) / (
-                xmax - xmin
-            )  # close to 1 means at TE
-            skint = skint + TEfac * 0.5 * np.exp(-100 * (1.0 - xx))
-
-            # increment sk
-            sk[i + 1] = sk[i] + skint
-
-        # offset by fraction of average to avoid problems with zero curvature
-        sk = sk + 2.0 * sum(sk) / nfine
-
-        # arclength values at points
-        skl = np.linspace(min(sk), max(sk), N)
-        s = interp1d(sk, s, "cubic")(skl)
-    else:
-        s = stgt
-
-    # new points
-    X, S, XS = splineval(PPfine, s), s, splinetan(PPfine, s)
-
-    return X, S, XS
-
-
-# -------------------------------------------------------------------------------
-def spline2d(X):
-    # splines 2d points
-    # INPUT
-    #   X : points to spline (2xN)
-    # OUTPUT
-    #   PP : two-dimensional spline structure
-
-    N = X.shape[1]
-    S, Snew = np.zeros(N), np.zeros(N)
-
-    # estimate the arclength and spline x, y separately
-    for i in range(1, N):
-        S[i] = S[i - 1] + norm2(X[:, i] - X[:, i - 1])
-    PPX = CubicSpline(S, X[0, :])
-    PPY = CubicSpline(S, X[1, :])
-
-    # re-integrate to true arclength via several passes
-    xq, wq = quadseg()
-    for ipass in range(10):
-        serr = 0
-        Snew[0] = S[0]
-        for i in range(N - 1):
-            ds = S[i + 1] - S[i]
-            st = xq * ds
-            px = PPX.c[:, i]
-            xs = 3.0 * px[0] * st * st + 2.0 * px[1] * st + px[2]
-            py = PPY.c[:, i]
-            ys = 3.0 * py[0] * st * st + 2.0 * py[1] * st + py[2]
-            sint = np.dot(wq, np.sqrt(xs * xs + ys * ys)) * ds
-            serr = max(serr, abs(sint - ds))
-            Snew[i + 1] = Snew[i] + sint
-        S[:] = Snew
-        PPX = CubicSpline(S, X[0, :])
-        PPY = CubicSpline(S, X[1, :])
-
-    return {"X": PPX, "Y": PPY}
-
-
-# -------------------------------------------------------------------------------
-def splineval(PP, S):
-    # evaluates 2d spline at given S values
-    # INPUT
-    #   PP : two-dimensional spline structure
-    #   S  : arclength values at which to evaluate the spline
-    # OUTPUT
-    #   XY : coordinates on spline at the requested s values (2xN)
-
-    return np.vstack((PP["X"](S), PP["Y"](S)))
-
-
-# -------------------------------------------------------------------------------
-def splinetan(PP, S):
-    # evaluates 2d spline tangent (not normalized) at given S values
-    # INPUT
-    #   PP  : two-dimensional spline structure
-    #   S   : arclength values at which to evaluate the spline tangent
-    # OUTPUT
-    #   XYS : dX/dS and dY/dS values at each point (2xN)
-
-    DPX = PP["X"].derivative()
-    DPY = PP["Y"].derivative()
-    return np.vstack((DPX(S), DPY(S)))
-
-
-# -------------------------------------------------------------------------------
-def quadseg():
-    # Returns quadrature points and weights for a [0,1] line segment
-    # INPUT
-    # OUTPUT
-    #   x : quadrature point coordinates (1d)
-    #   w : quadrature weights
-
-    x = np.array(
-        [
-            0.046910077030668,
-            0.230765344947158,
-            0.500000000000000,
-            0.769234655052842,
-            0.953089922969332,
-        ]
-    )
-    w = np.array(
-        [
-            0.118463442528095,
-            0.239314335249683,
-            0.284444444444444,
-            0.239314335249683,
-            0.118463442528095,
-        ]
-    )
-
-    return x, w
 
 
 # ============ VISCOUS FUNCTIONS ==============
