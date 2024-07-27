@@ -30,8 +30,26 @@ from scipy import sparse
 import copy
 from typing import Any
 from mfoil.utils import vprint, sind, cosd, norm2
-from mfoil.panel import panel_linvortex_stream, panel_constsource_stream, TE_info, panel_linsource_stream, panel_constsource_velocity, panel_linvortex_velocity, panel_linsource_velocity
-from mfoil.geometry import Geom, Panel, naca_points, set_coords, make_panels, mgeom_flap, mgeom_addcamber, mgeom_derotate, space_geom
+from mfoil.panel import (
+    panel_linvortex_stream,
+    panel_constsource_stream,
+    TE_info,
+    panel_linsource_stream,
+    panel_constsource_velocity,
+    panel_linvortex_velocity,
+    panel_linsource_velocity,
+)
+from mfoil.geometry import (
+    Geom,
+    Panel,
+    naca_points,
+    set_coords,
+    make_panels,
+    mgeom_flap,
+    mgeom_addcamber,
+    mgeom_derotate,
+    space_geom,
+)
 
 # -------------------------------------------------------------------------------
 
@@ -203,7 +221,7 @@ class Mfoil:
             if visc is not self.oper.viscous:
                 clear_solution(self)
             self.oper.viscous = visc
-            
+
     def make_panels(self, npanel, stgt=None):
         self.foil = make_panels(self.geom, npanel, stgt)
         clear_solution(self)
@@ -297,19 +315,9 @@ def calc_force(M: Mfoil):
         H, H_U = get_H(U)
         uk, uk_ue = get_uk(U[3], M.param)
         cd = 2.0 * U[0] * (uk / Vinf) ** ((5 + H) / 2.0)
-        M.post.cd_U = (
-            2.0 * U[0] * (uk / Vinf) ** ((5 + H) / 2.0) * np.log(uk / Vinf) * 0.5 * H_U
-        )
+        M.post.cd_U = 2.0 * U[0] * (uk / Vinf) ** ((5 + H) / 2.0) * np.log(uk / Vinf) * 0.5 * H_U
         M.post.cd_U[0] += 2.0 * (uk / Vinf) ** ((5 + H) / 2.0)
-        M.post.cd_U[3] += (
-            2.0
-            * U[0]
-            * (5 + H)
-            / 2.0
-            * (uk / Vinf) ** ((3 + H) / 2.0)
-            * (1.0 / Vinf)
-            * uk_ue
-        )
+        M.post.cd_U[3] += 2.0 * U[0] * (5 + H) / 2.0 * (uk / Vinf) ** ((3 + H) / 2.0) * (1.0 / Vinf) * uk_ue
 
         # skin friction drag
         Df = 0.0
@@ -362,7 +370,7 @@ def get_distributions(M: Mfoil):
     ----------
     M : Mfoil
         Mfoil class with a valid solution in M.glob.U
-    
+
     Notes
     -----
     - Relevant for viscous solutions
@@ -507,9 +515,7 @@ def get_ueinvref(M: Mfoil) -> NDArray[np.float64, Any]:
     """
 
     assert len(M.isol.gam) > 0, "No inviscid solution"
-    uearef = np.vstack(
-        (M.isol.sgnue * M.isol.gamref[:, 0], M.isol.sgnue * M.isol.gamref[:, 1])
-    )
+    uearef = np.vstack((M.isol.sgnue * M.isol.gamref[:, 0], M.isol.sgnue * M.isol.gamref[:, 1]))
     if (M.oper.viscous) and (M.wake.N > 0):
         uewref = M.isol.uewiref  # wake
         uewref[0, :] = uearef[-1, :]  # continuity of upper surface and wake
@@ -594,7 +600,14 @@ def build_gamma(M: Mfoil, alpha: float):
 
 
 # -------------------------------------------------------------------------------
-def inviscid_velocity(X: NDArray[np.float64, Any], G: NDArray[np.float64, Any], Vinf: float, alpha: float, x: NDArray[np.float64, Any], dolin: bool):
+def inviscid_velocity(
+    X: NDArray[np.float64, Any],
+    G: NDArray[np.float64, Any],
+    Vinf: float,
+    alpha: float,
+    x: NDArray[np.float64, Any],
+    dolin: bool,
+):
     """
     Returns the inviscid velocity at a point due to gamma on panels and freestream velocity
 
@@ -682,9 +695,7 @@ def build_wake(M):
     Nw = int(np.ceil(N / 10 + 10 * M.geom.wakelen))  # number of points on wake
     S = M.foil.s  # airfoil S values
     ds1 = 0.5 * (S[1] - S[0] + S[N - 1] - S[N - 2])  # first nominal wake panel size
-    sv = space_geom(
-        ds1, M.geom.wakelen * M.geom.chord, Nw
-    )  # geometrically-spaced points
+    sv = space_geom(ds1, M.geom.wakelen * M.geom.chord, Nw)  # geometrically-spaced points
     xyw = np.zeros([2, Nw])
     tw = xyw.copy()  # arrays of x,y points and tangents on wake
     xy1, xyN = M.foil.x[:, 0], M.foil.x[:, N - 1]  # airfoil TE points
@@ -700,21 +711,17 @@ def build_wake(M):
         v1 = inviscid_velocity(M.foil.x, M.isol.gam, Vinf, M.oper.alpha, xyw[:, i], False)
         v1 = v1 / norm2(v1)
         tw[:, i] = v1  # normalized
-        xyw[:, i + 1] = (xyw[:, i] + (sv[i + 1] - sv[i]) * v1)  # forward Euler (predictor) step
+        xyw[:, i + 1] = xyw[:, i] + (sv[i + 1] - sv[i]) * v1  # forward Euler (predictor) step
         v2 = inviscid_velocity(M.foil.x, M.isol.gam, Vinf, M.oper.alpha, xyw[:, i + 1], False)
         v2 = v2 / norm2(v2)
         tw[:, i + 1] = v2  # normalized
-        xyw[:, i + 1] = xyw[:, i] + (sv[i + 1] - sv[i]) * 0.5 * (
-            v1 + v2
-        )  # corrector step
+        xyw[:, i + 1] = xyw[:, i] + (sv[i + 1] - sv[i]) * 0.5 * (v1 + v2)  # corrector step
 
     # determine inviscid ue in the wake, and 0,90deg ref ue too
     uewi = np.zeros([Nw, 1])
     uewiref = np.zeros([Nw, 2])
     for i in range(Nw):
-        v = inviscid_velocity(
-            M.foil.x, M.isol.gam, Vinf, M.oper.alpha, xyw[:, i], False
-        )
+        v = inviscid_velocity(M.foil.x, M.isol.gam, Vinf, M.oper.alpha, xyw[:, i], False)
         uewi[i] = np.dot(v, tw[:, i])
         v = inviscid_velocity(M.foil.x, M.isol.gamref[:, 0], Vinf, 0, xyw[:, i], False)
         uewiref[i, 0] = np.dot(v, tw[:, i])
@@ -788,7 +795,6 @@ def rebuild_isol(M):
         calc_ue_m(M)  # rebuild matrices due to changed wake geometry
 
 
-
 # ============ VISCOUS FUNCTIONS ==============
 
 
@@ -826,9 +832,7 @@ def calc_ue_m(M):
         for j in range(Nw - 1):  # loop over wake panels
             Xj = M.wake.x[:, [j, j + 1]]  # panel endpoint coordinates
             Xm = 0.5 * (Xj[:, 0] + Xj[:, 1])  # panel midpoint
-            Xj = np.transpose(
-                np.vstack((Xj[:, 0], Xm, Xj[:, 1]))
-            )  # left, mid, right coords on panel
+            Xj = np.transpose(np.vstack((Xj[:, 0], Xm, Xj[:, 1])))  # left, mid, right coords on panel
             if j == (Nw - 2):
                 Xj[:, 2] = 2 * Xj[:, 2] - Xj[:, 1]  # ghost extension at last point
             a, b = panel_linsource_stream(Xj[:, [0, 1]], xi)  # left half panel
@@ -873,22 +877,12 @@ def calc_ue_m(M):
             d2 = norm2(Xj[:, 2] - Xj[:, 1])  # right half-panel length
             if i == j:
                 if j == 0:  # first point: special TE system (three panels meet)
-                    dl = norm2(
-                        M.foil.x[:, 1] - M.foil.x[:, 0]
-                    )  # lower surface panel length
-                    du = norm2(
-                        M.foil.x[:, N - 1] - M.foil.x[:, N - 2]
-                    )  # upper surface panel length
-                    Csig[i, 0] += (0.5 / np.pi) * (
-                        np.log(dl / d2) + 1
-                    )  # lower panel effect
-                    Csig[i, N - 2] += (0.5 / np.pi) * (
-                        np.log(du / d2) + 1
-                    )  # upper panel effect
+                    dl = norm2(M.foil.x[:, 1] - M.foil.x[:, 0])  # lower surface panel length
+                    du = norm2(M.foil.x[:, N - 1] - M.foil.x[:, N - 2])  # upper surface panel length
+                    Csig[i, 0] += (0.5 / np.pi) * (np.log(dl / d2) + 1)  # lower panel effect
+                    Csig[i, N - 2] += (0.5 / np.pi) * (np.log(du / d2) + 1)  # upper panel effect
                     Csig[i, N - 1] += -0.5 / np.pi  # self effect
-                elif (
-                    j == Nw - 1
-                ):  # last point: no self effect of last pan (ghost extension)
+                elif j == Nw - 1:  # last point: no self effect of last pan (ghost extension)
                     Csig[i, N - 1 + j - 1] += 0  # hence the 0
                 else:  # all other points
                     aa = (0.25 / np.pi) * np.log(d1 / d2)
@@ -904,12 +898,8 @@ def calc_ue_m(M):
                     a = panel_constsource_velocity(Xj[:, [0, 2]], xi, ti)
                     Csig[i, N + Nw - 3] += a  # full const source panel effect
                 else:  # all other points have a half panel on left and right
-                    [a1, b1] = panel_linsource_velocity(
-                        Xj[:, [0, 1]], xi, ti
-                    )  # left half-panel ue contrib
-                    [a2, b2] = panel_linsource_velocity(
-                        Xj[:, [1, 2]], xi, ti
-                    )  # right half-panel ue contrib
+                    [a1, b1] = panel_linsource_velocity(Xj[:, [0, 1]], xi, ti)  # left half-panel ue contrib
+                    [a2, b2] = panel_linsource_velocity(Xj[:, [1, 2]], xi, ti)  # right half-panel ue contrib
                     Csig[i, N - 1 + j - 1] += a1 + 0.5 * b1
                     Csig[i, N - 1 + j] += 0.5 * a2 + b2
 
@@ -942,9 +932,7 @@ def rebuild_ue_m(M):
 
     # Dp = d(source)/d(mass)  [(N+Nw-2) x (N+Nw)]  (sparse)
     N, Nw = M.foil.N, M.wake.N  # number of points on the airfoil/wake
-    if (type(M.vsol.sigma_m) == list) or not (
-        M.vsol.sigma_m.shape == (N + Nw - 2, N + Nw)
-    ):
+    if (type(M.vsol.sigma_m) == list) or not (M.vsol.sigma_m.shape == (N + Nw - 2, N + Nw)):
         alloc_Dp = True
         M.vsol.sigma_m = sparse.lil_matrix((N + Nw - 2, N + Nw))  # empty matrix
     else:
@@ -954,9 +942,7 @@ def rebuild_ue_m(M):
         ds = M.foil.s[i + 1] - M.foil.s[i]
         # Note, at stagnation: ue = K*s, dstar = const, m = K*s*dstar
         # sigma = dm/ds = K*dstar = m/s (separate for each side, +/-)
-        M.vsol.sigma_m[i, [i, i + 1]] = (
-            M.isol.sgnue[[i, i + 1]] * np.array([-1.0, 1.0]) / ds
-        )
+        M.vsol.sigma_m[i, [i, i + 1]] = M.isol.sgnue[[i, i + 1]] * np.array([-1.0, 1.0]) / ds
     for i in range(Nw - 1):
         ds = M.wake.s[i + 1] - M.wake.s[i]
         M.vsol.sigma_m[N - 1 + i, [N + i, N + i + 1]] = np.array([-1.0, 1.0]) / ds
@@ -967,11 +953,7 @@ def rebuild_ue_m(M):
     sgue = np.concatenate((M.isol.sgnue, np.ones(Nw)))
 
     # ue_m = ue_sigma * sigma_m [(N+Nw) x (N+Nw)] (not sparse)
-    M.vsol.ue_m = (
-        sparse.spdiags(sgue, 0, N + Nw, N + Nw, "csr")
-        @ M.vsol.ue_sigma
-        @ M.vsol.sigma_m
-    )
+    M.vsol.ue_m = sparse.spdiags(sgue, 0, N + Nw, N + Nw, "csr") @ M.vsol.ue_sigma @ M.vsol.sigma_m
 
 
 # -------------------------------------------------------------------------------
@@ -994,18 +976,10 @@ def init_thermo(M):
     if Minf > 0:
         M.param.KTb = np.sqrt(1 - Minf**2)  # Karman-Tsien beta
         M.param.KTl = Minf**2 / (1 + M.param.KTb) ** 2  # Karman-Tsien lambda
-        M.param.H0 = (
-            (1 + 0.5 * gmi * Minf**2) * Vinf**2 / (gmi * Minf**2)
-        )  # stagnation enthalpy
+        M.param.H0 = (1 + 0.5 * gmi * Minf**2) * Vinf**2 / (gmi * Minf**2)  # stagnation enthalpy
         Tr = 1 - 0.5 * Vinf**2 / M.param.H0  # freestream/stagnation temperature ratio
-        finf = (
-            Tr**1.5 * (1 + M.param.Tsrat) / (Tr + M.param.Tsrat)
-        )  # Sutherland's ratio
-        M.param.cps = (
-            2
-            / (g * Minf**2)
-            * (((1 + 0.5 * gmi * Minf**2) / (1 + 0.5 * gmi)) ** (g / gmi) - 1)
-        )
+        finf = Tr**1.5 * (1 + M.param.Tsrat) / (Tr + M.param.Tsrat)  # Sutherland's ratio
+        M.param.cps = 2 / (g * Minf**2) * (((1 + 0.5 * gmi * Minf**2) / (1 + 0.5 * gmi)) ** (g / gmi) - 1)
     else:
         finf = 1  # incompressible case
 
@@ -1350,11 +1324,7 @@ def solve_glob(M):
 
     # initialize the global variable Jacobian
     NN = 4 * Nsys + docl
-    if (
-        (M.glob.realloc)
-        or (type(M.glob.R_V) == list)
-        or not (M.glob.R_V.shape == (NN, NN))
-    ):
+    if (M.glob.realloc) or (type(M.glob.R_V) == list) or not (M.glob.R_V.shape == (NN, NN)):
         alloc_R_V = True
         M.glob.R_V = sparse.lil_matrix((NN, NN))  # +1 for cl-alpha constraint
     else:
@@ -1444,30 +1414,18 @@ def build_glob_sys(M):
     Nsys = M.glob.Nsys
 
     # allocate matrices if [], if size changed, or if global realloc flag is true
-    if (
-        (M.glob.realloc)
-        or (type(M.glob.R) == list)
-        or not (M.glob.R.shape[0] == 3 * Nsys)
-    ):
+    if (M.glob.realloc) or (type(M.glob.R) == list) or not (M.glob.R.shape[0] == 3 * Nsys):
         M.glob.R = np.zeros(3 * Nsys)
     else:
         M.glob.R *= 0.0
-    if (
-        (M.glob.realloc)
-        or (type(M.glob.R_U) == list)
-        or not (M.glob.R_U.shape == (3 * Nsys, 4 * Nsys))
-    ):
+    if (M.glob.realloc) or (type(M.glob.R_U) == list) or not (M.glob.R_U.shape == (3 * Nsys, 4 * Nsys)):
         alloc_R_U = True
         M.glob.R_U = sparse.lil_matrix((3 * Nsys, 4 * Nsys))
     else:
         alloc_R_U = False
         M.glob.R_U *= 0.0
 
-    if (
-        (M.glob.realloc)
-        or (type(M.glob.R_x) == list)
-        or not (M.glob.R_x == (3 * Nsys, Nsys))
-    ):
+    if (M.glob.realloc) or (type(M.glob.R_x) == list) or not (M.glob.R_x == (3 * Nsys, Nsys)):
         alloc_R_x = True
         M.glob.R_x = sparse.lil_matrix((3 * Nsys, Nsys))
     else:
@@ -1497,9 +1455,7 @@ def build_glob_sys(M):
             Ip = [i0, i0 + 1]
             Ust, Ust_U, Ust_x, xst = stagnation_state(U[:, Ip], xi[Ip])  # stag state
             param.turb, param.simi = False, True  # similarity station flag
-            R1, R1_Ut, R1_x = residual_station(
-                param, np.r_[xst, xst], np.stack((Ust, Ust), axis=-1), Aux[[i0, i0]]
-            )
+            R1, R1_Ut, R1_x = residual_station(param, np.r_[xst, xst], np.stack((Ust, Ust), axis=-1), Aux[[i0, i0]])
             param.simi = False
             R1_Ust = R1_Ut[:, 0:4] + R1_Ut[:, 4:8]
             R1_U = np.dot(R1_Ust, Ust_U)
@@ -1545,9 +1501,7 @@ def build_glob_sys(M):
 
             # residual, Jacobian for point i
             if tran:
-                Ri, Ri_U, Ri_x = residual_transition(
-                    M, param, xi[Ip], U[:, Ip], Aux[Ip]
-                )
+                Ri, Ri_U, Ri_x = residual_transition(M, param, xi[Ip], U[:, Ip], Aux[Ip])
                 store_transition(M, si, i)
             else:
                 Ri, Ri_U, Ri_x = residual_station(param, xi[Ip], U[:, Ip], Aux[Ip])
@@ -1808,9 +1762,7 @@ def init_boundary_layer(M):
             for iNewton in range(nNewton):
                 # call residual at stagnation
                 param.turb, param.simi = False, True  # similarity station flag
-                R, R_U, R_x = residual_station(
-                    param, np.r_[xst, xst], np.stack((Ust, Ust), axis=-1), np.zeros(2)
-                )
+                R, R_U, R_x = residual_station(param, np.r_[xst, xst], np.stack((Ust, Ust), axis=-1), np.zeros(2))
                 param.simi = False
                 if norm2(R) < 1e-10:
                     break
@@ -1858,9 +1810,7 @@ def init_boundary_layer(M):
                         "i=%d, residual_transition (iNewton = %d) \n" % (i, iNewton),
                     )
                     try:
-                        R, R_U, R_x = residual_transition(
-                            M, param, xi[Ip], U[:, Ip], Aux[Ip]
-                        )
+                        R, R_U, R_x = residual_transition(M, param, xi[Ip], U[:, Ip], Aux[Ip])
                     except:
                         vprint(
                             param,
@@ -1873,9 +1823,7 @@ def init_boundary_layer(M):
                         U[2, i] = ct
                         R = 0  # so we move on
                 else:
-                    vprint(
-                        param, 4, "i=%d, residual_station (iNewton = %d)" % (i, iNewton)
-                    )
+                    vprint(param, 4, "i=%d, residual_station (iNewton = %d)" % (i, iNewton))
                     R, R_U, R_x = residual_station(param, xi[Ip], U[:, Ip], Aux[Ip])
                 if norm2(R) < 1e-10:
                     break
@@ -1929,9 +1877,7 @@ def init_boundary_layer(M):
                     if param.wake:
                         H2 = Hk
                         for k in range(6):
-                            H2 -= (H2 + 0.03 * Hkr * (H2 - 1) ** 3 - Hk) / (
-                                1 + 0.09 * Hkr * (H2 - 1) ** 2
-                            )
+                            H2 -= (H2 + 0.03 * Hkr * (H2 - 1) ** 3 - Hk) / (1 + 0.09 * Hkr * (H2 - 1) ** 2)
                         Hktgt = max(H2, 1.01)
                     elif param.turb:
                         Hktgt = Hk - 0.15 * Hkr  # turb: decrease in Hk
@@ -1955,17 +1901,14 @@ def init_boundary_layer(M):
                     U[1, i] = U[1, i - 1] * (xi[i] / xi[i - 1]) ** 0.5
                 else:
                     rlen = (xi[i] - xi[i - 1]) / (10.0 * U[1, i - 1])
-                    U[1, i] = (U[1, i - 1] + U[0, i - 1] * rlen) / (
-                        1.0 + rlen
-                    )  # TODO check on this extrap
+                    U[1, i] = (U[1, i - 1] + U[0, i - 1] * rlen) / (1.0 + rlen)  # TODO check on this extrap
 
             # check for transition
             if (not param.turb) and (not tran) and (U[2, i] > param.ncrit):
                 vprint(
                     param,
                     2,
-                    "Identified transition at (si=%d, i=%d): n=%.5f, ncrit=%.5f\n"
-                    % (si, i, U[2, i], param.ncrit),
+                    "Identified transition at (si=%d, i=%d): n=%.5f, ncrit=%.5f\n" % (si, i, U[2, i], param.ncrit),
                 )
                 tran = True
                 continue  # redo station with transition
@@ -2003,9 +1946,7 @@ def store_transition(M, si, i):
     M.vsol.Xt[si, 0] = xt  # xi location
     M.vsol.Xt[si, 1] = x0 + (xt - xi0) / (xi1 - xi0) * (x1 - x0)  # x location
     slu = ["lower", "upper"]
-    vprint(
-        M.param, 1, "  transition on %s side at x=%.5f" % (slu[si], M.vsol.Xt[si, 1])
-    )
+    vprint(M.param, 1, "  transition on %s side at x=%.5f" % (slu[si], M.vsol.Xt[si, 1]))
 
 
 # -------------------------------------------------------------------------------
@@ -2124,14 +2065,11 @@ def march_amplification(M, si):
             vprint(
                 param,
                 2,
-                "  march_amplification (si,i=%d,%d): %.5e is above critical."
-                % (si, i, U2[2]),
+                "  march_amplification (si,i=%d,%d): %.5e is above critical." % (si, i, U2[2]),
             )
             break
         else:
-            M.glob.U[2, Is[i]] = U2[
-                2
-            ]  # store amplification in M.glob.U (also seen in view U)
+            M.glob.U[2, Is[i]] = U2[2]  # store amplification in M.glob.U (also seen in view U)
             U[2, i] = U2[2]
             if np.iscomplex(U[2, i]):
                 raise ValueError("imaginary amp during march")
@@ -2229,12 +2167,8 @@ def residual_transition(M, param, x, U, Aux):
     Ut_x2 += Ut_xt * xt_x2
 
     # sensitivity of Ut w.r.t. U1 and U2
-    Ut_U1 = (
-        w1 * np.eye(4) + np.outer((U2 - U1), xt_U1) / dx
-    )  # w1*I + U1*w1_xt*xt_U1 + U2*w2_xt*xt_U1;
-    Ut_U2 = (
-        w2 * np.eye(4) + np.outer((U2 - U1), xt_U2) / dx
-    )  # w2*I + U1*w1_xt*xt_U2 + U2*w2_xt*xt_U2;
+    Ut_U1 = w1 * np.eye(4) + np.outer((U2 - U1), xt_U1) / dx  # w1*I + U1*w1_xt*xt_U1 + U2*w2_xt*xt_U1;
+    Ut_U2 = w2 * np.eye(4) + np.outer((U2 - U1), xt_U2) / dx  # w2*I + U1*w1_xt*xt_U2 + U2*w2_xt*xt_U2;
 
     # laminar and turbulent states at transition
     Utl = Ut.copy()
@@ -2267,15 +2201,11 @@ def residual_transition(M, param, x, U, Aux):
 
     # laminar/turbulent residuals and linearizations
     param.turb = False
-    Rl, Rl_U, Rl_x = residual_station(
-        param, np.r_[x1, xt], np.stack((U1, Utl), axis=-1), Aux
-    )
+    Rl, Rl_U, Rl_x = residual_station(param, np.r_[x1, xt], np.stack((U1, Utl), axis=-1), Aux)
     Rl_U1 = Rl_U[:, I1]
     Rl_Utl = Rl_U[:, I2]
     param.turb = True
-    Rt, Rt_U, Rt_x = residual_station(
-        param, np.r_[xt, x2], np.stack((Utt, U2), axis=-1), Aux
-    )
+    Rt, Rt_U, Rt_x = residual_station(param, np.r_[xt, x2], np.stack((Utt, U2), axis=-1), Aux)
     Rt_Utt = Rt_U[:, I1]
     Rt_U2 = Rt_U[:, I2]
 
@@ -2300,16 +2230,8 @@ def residual_transition(M, param, x, U, Aux):
     R_U = np.hstack((R_U1, R_U2))
     R_x = np.stack(
         (
-            Rl_x[:, 0]
-            + Rl_x[:, 1] * xt_x1
-            + Rt_x[:, 0] * xt_x1
-            + np.dot(Rl_Utl, Utl_x1)
-            + np.dot(Rt_Utt, Utt_x1),
-            Rt_x[:, 1]
-            + Rl_x[:, 1] * xt_x2
-            + Rt_x[:, 0] * xt_x2
-            + np.dot(Rl_Utl, Utl_x2)
-            + np.dot(Rt_Utt, Utt_x2),
+            Rl_x[:, 0] + Rl_x[:, 1] * xt_x1 + Rt_x[:, 0] * xt_x1 + np.dot(Rl_Utl, Utl_x1) + np.dot(Rt_Utt, Utt_x1),
+            Rt_x[:, 1] + Rl_x[:, 1] * xt_x2 + Rt_x[:, 0] * xt_x2 + np.dot(Rl_Utl, Utl_x2) + np.dot(Rt_Utt, Utt_x2),
         ),
         axis=-1,
     )
@@ -2441,9 +2363,7 @@ def residual_station(param, x, Uin, Aux):
         cteq, cteq_U = upwind(upw, upw_U, cteq1, cteq1_U1, cteq2, cteq2_U2)
 
         # root of shear coefficient (a state), upwinded
-        saa, saa_U = upwind(
-            upw, upw_U, sa[0], np.r_[0, 0, 1, 0], sa[1], np.r_[0, 0, 1, 0]
-        )
+        saa, saa_U = upwind(upw, upw_U, sa[0], np.r_[0, 0, 1, 0], sa[1], np.r_[0, 0, 1, 0])
 
         # lag coefficient
         Klag = param.SlagK
@@ -2457,11 +2377,7 @@ def residual_station(param, x, Uin, Aux):
             ald = param.Dlr
 
         # shear lag equation
-        Rlag = (
-            Clag * (cteq - ald * saa) * dx
-            - 2 * de * salog
-            + 2 * de * (uq * dx - uelog) * param.Cuq
-        )
+        Rlag = Clag * (cteq - ald * saa) * dx - 2 * de * salog + 2 * de * (uq * dx - uelog) * param.Cuq
         Rlag_U = (
             Clag_U * (cteq - ald * saa) * dx
             + Clag * (cteq_U - ald * saa_U) * dx
@@ -2507,12 +2423,7 @@ def residual_station(param, x, Uin, Aux):
 
     # momentum equation
     Rmom = thlog + (2 + H + Hw - Ms) * uelog - 0.5 * xlog * cfxt
-    Rmom_U = (
-        thlog_U
-        + (H_U + Hw_U - Ms_U) * uelog
-        + (2 + H + Hw - Ms) * uelog_U
-        - 0.5 * xlog * cfxt_U
-    )
+    Rmom_U = thlog_U + (H_U + Hw_U - Ms_U) * uelog + (2 + H + Hw - Ms) * uelog_U - 0.5 * xlog * cfxt_U
     Rmom_x = -0.5 * xlog_x * cfxt - 0.5 * xlog * cfxt_x
 
     # dissipation function times x/theta: cDi = (2*cD/H*)*x/theta, upwinded
@@ -2627,9 +2538,7 @@ def get_uq(ds, ds_U, cf, cf_U, Hk, Hk_U, Ret, Ret_U, param):
     if Hkc < 0.01:
         Hkc, Hkc_U = 0.01, Hkc_U * 0.0
     ut = 0.5 * cf - (Hkc / (A * Hk)) ** 2
-    ut_U = 0.5 * cf_U - 2 * (Hkc / (A * Hk)) * (
-        Hkc_U / (A * Hk) - Hkc / (A * Hk**2) * Hk_U
-    )
+    ut_U = 0.5 * cf_U - 2 * (Hkc / (A * Hk)) * (Hkc_U / (A * Hk) - Hkc / (A * Hk**2) * Hk_U)
     uq = ut / (beta * ds)
     uq_U = ut_U / (beta * ds) - uq / ds * ds_U
 
@@ -2691,9 +2600,7 @@ def get_cteq(U, param):
             Hkc, Hkc_U = 0.01, Hkc_U * 0.0
 
     num = CC * Hs * (Hk - 1) * Hkc**2
-    num_U = CC * (
-        Hs_U * (Hk - 1) * Hkc**2 + Hs * Hk_U * Hkc**2 + Hs * (Hk - 1) * 2 * Hkc * Hkc_U
-    )
+    num_U = CC * (Hs_U * (Hk - 1) * Hkc**2 + Hs * Hk_U * Hkc**2 + Hs * (Hk - 1) * 2 * Hkc * Hkc_U)
     den = (1 - Us) * H * Hk**2
     den_U = (-Us_U) * H * Hk**2 + (1 - Us) * H_U * Hk**2 + (1 - Us) * H * 2 * Hk * Hk_U
     cteq = np.sqrt(num / den)
@@ -2737,26 +2644,16 @@ def get_Hs(U, param):
             aa = (2 - Hsmin - 4 / Reb) * Hr**2
             aa_U = (4 / Reb**2 * Reb_U) * Hr**2 + (2 - Hsmin - 4 / Reb) * 2 * Hr * Hr_U
             Hs = Hsmin + 4 / Reb + aa * 1.5 / (Hk + 0.5)
-            Hs_U = (
-                -4 / Reb**2 * Reb_U
-                + aa_U * 1.5 / (Hk + 0.5)
-                - aa * 1.5 / (Hk + 0.5) ** 2 * Hk_U
-            )
+            Hs_U = -4 / Reb**2 * Reb_U + aa_U * 1.5 / (Hk + 0.5) - aa * 1.5 / (Hk + 0.5) ** 2 * Hk_U
         else:  # separated branch
             lrb = np.log(Reb)
             lrb_U = 1 / Reb * Reb_U
             aa = Hk - Ho + 4 / lrb
             aa_U = Hk_U - Ho_U - 4 / lrb**2 * lrb_U
             bb = 0.007 * lrb / aa**2 + dHsinf / Hk
-            bb_U = (
-                0.007 * (lrb_U / aa**2 - 2 * lrb / aa**3 * aa_U) - dHsinf / Hk**2 * Hk_U
-            )
+            bb_U = 0.007 * (lrb_U / aa**2 - 2 * lrb / aa**3 * aa_U) - dHsinf / Hk**2 * Hk_U
             Hs = Hsmin + 4 / Reb + (Hk - Ho) ** 2 * bb
-            Hs_U = (
-                -4 / Reb**2 * Reb_U
-                + 2 * (Hk - Ho) * (Hk_U - Ho_U) * bb
-                + (Hk - Ho) ** 2 * bb_U
-            )
+            Hs_U = -4 / Reb**2 * Reb_U + 2 * (Hk - Ho) * (Hk_U - Ho_U) * bb + (Hk - Ho) ** 2 * bb_U
         # slight Mach number correction
         M2, M2_U = get_Mach2(U, param)  # squared edge Mach number
         den = 1 + 0.014 * M2
@@ -2769,9 +2666,7 @@ def get_Hs(U, param):
             num = 0.0111 * a**2 - 0.0278 * a**3
             Hs = num / (Hk + 1) + 1.528 - 0.0002 * (a * Hk) ** 2
             Hs_Hk = (
-                (0.0111 * 2 * a - 0.0278 * 3 * a**2) / (Hk + 1)
-                - num / (Hk + 1) ** 2
-                - 0.0002 * 2 * a * Hk * (Hk + a)
+                (0.0111 * 2 * a - 0.0278 * 3 * a**2) / (Hk + 1) - num / (Hk + 1) ** 2 - 0.0002 * 2 * a * Hk * (Hk + a)
             )
         else:
             Hs = 0.015 * a**2 / Hk + 1.528
@@ -3072,19 +2967,13 @@ def get_cf(U, param):
         dd = np.tanh(4.0 - Hk / 0.875)
         dd_U = (1 - dd**2) * (-Hk_U / 0.875)
         cf0 = 0.3 * np.exp(aa) * bb**cc
-        cf0_U = (
-            cf0 * aa_U
-            + 0.3 * np.exp(aa) * cc * bb ** (cc - 1) * bb_U
-            + cf0 * np.log(bb) * cc_U
-        )
+        cf0_U = cf0 * aa_U + 0.3 * np.exp(aa) * cc * bb ** (cc - 1) * bb_U + cf0 * np.log(bb) * cc_U
         cf = (cf0 + 1.1e-4 * (dd - 1)) / Fc
         cf_U = (cf0_U + 1.1e-4 * dd_U) / Fc - cf / Fc * Fc_U
     else:  # laminar cf
         if Hk < 5.5:
             num = 0.0727 * (5.5 - Hk) ** 3 / (Hk + 1) - 0.07
-            num_Hk = 0.0727 * (
-                3 * (5.5 - Hk) ** 2 / (Hk + 1) * (-1) - (5.5 - Hk) ** 3 / (Hk + 1) ** 2
-            )
+            num_Hk = 0.0727 * (3 * (5.5 - Hk) ** 2 / (Hk + 1) * (-1) - (5.5 - Hk) ** 3 / (Hk + 1) ** 2)
         else:
             num = 0.015 * (1 - 1.0 / (Hk - 4.5)) ** 2 - 0.07
             num_Hk = 0.015 * 2 * (1 - 1.0 / (Hk - 4.5)) / (Hk - 4.5) ** 2
@@ -3134,9 +3023,7 @@ def get_cfutstag(Uin, param):
 
     if Hk < 5.5:
         num = 0.0727 * (5.5 - Hk) ** 3 / (Hk + 1) - 0.07
-        num_Hk = 0.0727 * (
-            3 * (5.5 - Hk) ** 2 / (Hk + 1) * (-1) - (5.5 - Hk) ** 3 / (Hk + 1) ** 2
-        )
+        num_Hk = 0.0727 * (3 * (5.5 - Hk) ** 2 / (Hk + 1) * (-1) - (5.5 - Hk) ** 3 / (Hk + 1) ** 2)
     else:
         num = 0.015 * (1 - 1.0 / (Hk - 4.5)) ** 2 - 0.07
         num_Hk = 0.015 * 2 * (1 - 1.0 / (Hk - 4.5)) / (Hk - 4.5) ** 2
@@ -3168,10 +3055,7 @@ def get_cdutstag(Uin, param):
     else:
         Hk1 = Hk - 4
         num = -0.0016 * Hk1**2 / (1 + 0.02 * Hk1**2) + 0.207
-        num_Hk = -0.0016 * (
-            2 * Hk1 / (1 + 0.02 * Hk1**2)
-            - Hk1**2 / (1 + 0.02 * Hk1**2) ** 2 * 0.02 * 2 * Hk1
-        )
+        num_Hk = -0.0016 * (2 * Hk1 / (1 + 0.02 * Hk1**2) - Hk1**2 / (1 + 0.02 * Hk1**2) ** 2 * 0.02 * 2 * Hk1)
 
     nu = param.mu0 / param.rho0
     D = nu * num
@@ -3279,17 +3163,10 @@ def get_cDi_turbwall(U, param):
     Hmin_U = -2.1 / lr**2 * lr_U
     aa = np.tanh((Hk - 1) / (Hmin - 1))
     fac = 0.5 + 0.5 * aa
-    fac_U = (
-        0.5 * (1 - aa**2) * (Hk_U / (Hmin - 1) - (Hk - 1) / (Hmin - 1) ** 2 * Hmin_U)
-    )
+    fac_U = 0.5 * (1 - aa**2) * (Hk_U / (Hmin - 1) - (Hk - 1) / (Hmin - 1) ** 2 * Hmin_U)
 
     cDi = 0.5 * cf * Us * (2 / Hs) * fac
-    cDi_U = (
-        cf_U * Us / Hs * fac
-        + cf * Us_U / Hs * fac
-        - cDi / Hs * Hs_U
-        + cf * Us / Hs * fac_U
-    )
+    cDi_U = cf_U * Us / Hs * fac + cf * Us_U / Hs * fac - cDi / Hs * Hs_U + cf * Us / Hs * fac_U
 
     return cDi, cDi_U
 
@@ -3315,10 +3192,7 @@ def get_cDi_lam(U, param):
     else:
         Hk1 = Hk - 4
         num = -0.0016 * Hk1**2 / (1 + 0.02 * Hk1**2) + 0.207
-        num_Hk = -0.0016 * (
-            2 * Hk1 / (1 + 0.02 * Hk1**2)
-            - Hk1**2 / (1 + 0.02 * Hk1**2) ** 2 * 0.02 * 2 * Hk1
-        )
+        num_Hk = -0.0016 * (2 * Hk1 / (1 + 0.02 * Hk1**2) - Hk1**2 / (1 + 0.02 * Hk1**2) ** 2 * 0.02 * 2 * Hk1)
 
     cDi = num / Ret
     cDi_U = num_Hk / Ret * Hk_U - num / Ret**2 * Ret_U
@@ -3348,11 +3222,7 @@ def get_cDi_lamwake(U, paramin):
     HsRet_U = Hs_U * Ret + Hs * Ret_U
 
     num = 2 * 1.1 * (1 - 1 / Hk) ** 2 * (1 / Hk)
-    num_Hk = (
-        2
-        * 1.1
-        * (2 * (1 - 1 / Hk) * (1 / Hk**2) * (1 / Hk) + (1 - 1 / Hk) ** 2 * (-1 / Hk**2))
-    )
+    num_Hk = 2 * 1.1 * (2 * (1 - 1 / Hk) * (1 / Hk**2) * (1 / Hk) + (1 - 1 / Hk) ** 2 * (-1 / Hk**2))
     cDi = num / HsRet
     cDi_U = num_Hk * Hk_U / HsRet - num / HsRet**2 * HsRet_U
 
@@ -3382,11 +3252,7 @@ def get_cDi_outer(U, param):
     ct_U = np.array([0, 0, 2 * U[2], 0])
 
     cDi = ct * (0.995 - Us) * 2 / Hs
-    cDi_U = (
-        ct_U * (0.995 - Us) * 2 / Hs
-        + ct * (-Us_U) * 2 / Hs
-        - ct * (0.995 - Us) * 2 / Hs**2 * Hs_U
-    )
+    cDi_U = ct_U * (0.995 - Us) * 2 / Hs + ct * (-Us_U) * 2 / Hs - ct * (0.995 - Us) * 2 / Hs**2 * Hs_U
 
     return cDi, cDi_U
 
@@ -3439,9 +3305,7 @@ def get_Us(U, param):
     beta = param.GB
     bi = 1.0 / beta
     Us = 0.5 * Hs * (1 - bi * (Hk - 1) / H)
-    Us_U = 0.5 * Hs_U * (1 - bi * (Hk - 1) / H) + 0.5 * Hs * (
-        -bi * (Hk_U) / H + bi * (Hk - 1) / H**2 * H_U
-    )
+    Us_U = 0.5 * Hs_U * (1 - bi * (Hk - 1) / H) + 0.5 * Hs * (-bi * (Hk_U) / H + bi * (Hk - 1) / H**2 * H_U)
     # limits
     if (not param.wake) and (Us > 0.95):
         Us, Us_U = 0.98, Us_U * 0
@@ -3502,9 +3366,7 @@ def get_damp(U, param):
         af = -0.05 + 2.7 * Hmi - 5.5 * Hmi**2 + 3 * Hmi**3 + 0.1 * np.exp(-20 * Hmi)
         af_U = (2.7 - 11 * Hmi + 9 * Hmi**2 - 1 * np.exp(-20 * Hmi)) * Hmi_U
         damp = rf * af * da / th
-        damp_U = (
-            rf_U * af * da + rf * af_U * da + rf * af * da_U
-        ) / th - damp / th * np.array([1, 0, 0, 0])
+        damp_U = (rf_U * af * da + rf * af_U * da + rf * af * da_U) / th - damp / th * np.array([1, 0, 0, 0])
 
     # extra amplification to ensure dn/dx > 0 near ncrit
     ncrit = param.ncrit
@@ -3604,22 +3466,14 @@ def ping_test(M):
                             np.r_[0.002, 0.0018],
                             np.r_[-0.2, 0.3],
                         )
-                        v0, v_U0, v_x0 = f(
-                            param, xi, np.stack((U[0:4], U[4:8]), axis=-1), Aux
-                        )
+                        v0, v_U0, v_x0 = f(param, xi, np.stack((U[0:4], U[4:8]), axis=-1), Aux)
                         for iep in range(2):  # test with two epsilons
                             U[k] += ep
                             xi += ep * dx
-                            v1, v_U1, v_x1 = f(
-                                param, xi, np.stack((U[0:4], U[4:8]), axis=-1), Aux
-                            )
+                            v1, v_U1, v_x1 = f(param, xi, np.stack((U[0:4], U[4:8]), axis=-1), Aux)
                             U[k] -= ep
                             xi -= ep * dx
-                            E[iep] = norm2(
-                                (v1 - v0) / ep
-                                - 0.5
-                                * (v_U1[:, k] + v_U0[:, k] + np.dot(v_x0 + v_x1, dx))
-                            )
+                            E[iep] = norm2((v1 - v0) / ep - 0.5 * (v_U1[:, k] + v_U0[:, k] + np.dot(v_x0 + v_x1, dx)))
                             ep /= 2
                     else:
                         [v0, v_U0] = f(U, param)
@@ -3641,8 +3495,7 @@ def ping_test(M):
                 vprint(
                     param,
                     0,
-                    "%-18s %-5s err=[%s]  rates=[%s] %s"
-                    % (f.__name__, sturb[it], serr, srates, smark),
+                    "%-18s %-5s err=[%s]  rates=[%s] %s" % (f.__name__, sturb[it], serr, srates, smark),
                 )
 
     # transition residual ping
@@ -3676,15 +3529,10 @@ def ping_test(M):
     dU, dx, ep, v, v_u = np.random.rand(4), np.random.rand(1), 1e-6, [], []
     for ie in range(3):
         param.simi = True
-        R, R_U, R_x = residual_station(
-            param, np.r_[x, x], np.stack((U, U), axis=-1), Aux
-        )
+        R, R_U, R_x = residual_station(param, np.r_[x, x], np.stack((U, U), axis=-1), Aux)
         param.simi = False
         v.append(R)
-        v_u.append(
-            np.dot(R_U[:, range(0, 4)] + R_U[:, range(4, 8)], dU)
-            + (R_x[:, 0] + R_x[:, 1]) * dx[0]
-        )
+        v_u.append(np.dot(R_U[:, range(0, 4)] + R_U[:, range(4, 8)], dU) + (R_x[:, 0] + R_x[:, 1]) * dx[0])
         U += ep * dU
         x += ep * dx[0]
     check_ping(ep, v, v_u, "stagnation residual")
@@ -3703,9 +3551,7 @@ def ping_test(M):
         for ie in range(3):
             build_glob_sys(M)
             v.append(M.glob.R.copy())
-            v_u.append(
-                M.glob.R_U @ np.reshape(dU, 4 * Nsys, order="F") + M.glob.R_x @ dx
-            )
+            v_u.append(M.glob.R_U @ np.reshape(dU, 4 * Nsys, order="F") + M.glob.R_x @ dx)
             M.glob.U += ep * dU
             M.isol.xi += ep * dx
             if ix == 1:
@@ -3732,9 +3578,7 @@ def ping_test(M):
         U,
         x,
     ) = (
-        np.transpose(
-            np.array([[5e-5, 1.1e-4, 0, 0.0348], [4.9e-5, 1.09e-4, 0, 0.07397]])
-        ),
+        np.transpose(np.array([[5e-5, 1.1e-4, 0, 0.0348], [4.9e-5, 1.09e-4, 0, 0.07397]])),
         np.r_[5.18e-4, 1.1e-3],
     )
     dU, dx, ep, v, v_u = np.random.rand(4, 2), np.random.rand(2), 1e-6, [], []

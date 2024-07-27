@@ -39,9 +39,7 @@ def make_panels(geom: Geom, npanel: int, stgt=None) -> Panel:
     foil = Panel()
     Ufac = 2  # uniformity factor (higher, more uniform paneling)
     TEfac = 0.1  # Trailing-edge factor (higher, more TE resolution)
-    foil.x, foil.s, foil.t = spline_curvature(
-        geom.xpoint, npanel + 1, Ufac, TEfac, stgt
-    )
+    foil.x, foil.s, foil.t = spline_curvature(geom.xpoint, npanel + 1, Ufac, TEfac, stgt)
     foil.N = foil.x.shape[1]
     return foil
 
@@ -136,7 +134,6 @@ def mgeom_derotate(geom: Geom, npanel: int) -> Panel:
     return make_panels(geom, npanel)
 
 
-
 # -------------------------------------------------------------------------------
 def space_geom(dx0, L, Np):
     # spaces Np points geometrically from [0,L], with dx0 as first interval
@@ -216,9 +213,7 @@ def naca_points(digits: str) -> Geom:
     geom.name = "NACA " + digits
     N, te = 100, 1.5  # points per side and trailing-edge bunching factor
     f = np.linspace(0, 1, N + 1)  # linearly-spaced points between 0 and 1
-    x = (
-        1 - (te + 1) * f * (1 - f) ** te - (1 - f) ** (te + 1)
-    )  # bunched points, x, 0 to 1
+    x = 1 - (te + 1) * f * (1 - f) ** te - (1 - f) ** (te + 1)  # bunched points, x, 0 to 1
 
     # normalized thickness, gap at trailing edge (use -.1035*x**4 for no gap)
     t = 0.2969 * np.sqrt(x) - 0.126 * x - 0.3516 * x**2 + 0.2843 * x**3 - 0.1015 * x**4
@@ -300,9 +295,7 @@ def spline_curvature(Xin, N, Ufac, TEfac, stgt):
             skint = 0.01 * Ufac + 0.5 * np.dot(wq, np.sqrt(xss * xss + yss * yss)) * ds
 
             # force TE resolution
-            xx = (0.5 * (xyfine[0, i] + xyfine[0, i + 1]) - xmin) / (
-                xmax - xmin
-            )  # close to 1 means at TE
+            xx = (0.5 * (xyfine[0, i] + xyfine[0, i + 1]) - xmin) / (xmax - xmin)  # close to 1 means at TE
             skint = skint + TEfac * 0.5 * np.exp(-100 * (1.0 - xx))
 
             # increment sk
@@ -396,23 +389,7 @@ def quadseg():
     #   x : quadrature point coordinates (1d)
     #   w : quadrature weights
 
-    x = np.array(
-        [
-            0.046910077030668,
-            0.230765344947158,
-            0.500000000000000,
-            0.769234655052842,
-            0.953089922969332,
-        ]
-    )
-    w = np.array(
-        [
-            0.118463442528095,
-            0.239314335249683,
-            0.284444444444444,
-            0.239314335249683,
-            0.118463442528095,
-        ]
-    )
+    x = np.array([0.046910077030668, 0.230765344947158, 0.500000000000000, 0.769234655052842, 0.953089922969332])
+    w = np.array([0.118463442528095, 0.239314335249683, 0.284444444444444, 0.239314335249683, 0.118463442528095])
 
     return x, w

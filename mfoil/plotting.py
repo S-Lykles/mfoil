@@ -7,6 +7,7 @@ from mfoil.utils import norm2
 
 # ============ PLOTTING AND POST-PROCESSING  ==============
 
+
 # -------------------------------------------------------------------------------
 def plot_cpplus(ax, m):
     # makes a cp plot with outputs printed
@@ -29,9 +30,7 @@ def plot_cpplus(ax, m):
         ax.plot(x, m.post.cp, "-", color="blue", linewidth=2)
 
     if (m.oper.Ma > 0) and (m.param.cps > (min(m.post.cp) - 0.2)):
-        ax.plot(
-            [xrng(1), chord], m.param.cps * [1, 1], "--", color="black", linewidth=2
-        )
+        ax.plot([xrng(1), chord], m.param.cps * [1, 1], "--", color="black", linewidth=2)
         ax.text(0.8 * chord, m.param.cps - 0.1, r"sonic $c_p$", fontsize=18)
 
     ax.set_xlim(xrng)
@@ -183,7 +182,7 @@ def plot_results(m: Mfoil):
 # -------------------------------------------------------------------------------
 def main():
     # make a NACA 2412 airfoil
-    m = Mfoil(naca="0012", npanel=199)
+    m = Mfoil(naca="2412", npanel=199)
     print("NACA geom name =", m.geom.name, "  num. panels =", m.foil.N)
     # add a flap
     # m.geom_flap(np.r_[0.8,0],5)
@@ -192,6 +191,7 @@ def main():
     # add camber
     # m.geom_addcamber(np.array([[0,0.3,0.7,1],[0,-.03,.01,0]]))
     # set up a compressible viscous run (note, alpha is in degrees)
+    m.geom_flap([0.85, 0], 10)
     m.setoper(alpha=2, Re=5 * 10**6, Ma=0.0)
     # request plotting, specify the output file for the plot
     m.param.doplot, m.post.rfile = True, "results.pdf"
