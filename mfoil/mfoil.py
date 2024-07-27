@@ -32,6 +32,8 @@ import matplotlib.pyplot as plt
 from matplotlib import gridspec
 import copy
 from typing import Tuple, Optional, Any
+from mfoil.utils import vprint, sind, cosd, norm2, dist, atan2
+from mfoil.panel import panel_linvortex_stream, panel_constsource_stream, TE_info, panel_linsource_stream, panel_constsource_velocity, panel_linvortex_velocity, panel_linsource_velocity
 
 
 # -------------------------------------------------------------------------------
@@ -148,8 +150,6 @@ class Param:  # parameters
         self.verb = 1  # printing verbosity level (higher -> more verbose)
         self.rtol = 1e-10  # residual tolerance for Newton
         self.niglob = 50  # maximum number of global iterations
-        self.doplot = True  # true to plot results after each solution
-        self.axplot = []  # plotting axes (for more control of where plots go)
 
         # viscous parameters
         self.ncrit = 9.0  # critical amplification factor
@@ -227,8 +227,6 @@ class Mfoil:
             solve_viscous(M)
         else:
             solve_inviscid(M)
-        if M.param.doplot:
-            plot_results(M)
 
     # geometry functions
     def geom_flap(M, xzhinge, eta):
@@ -245,221 +243,10 @@ class Mfoil:
         ping_test(M)
 
 
-# ============ INPUT, OUTPUT, UTILITY ==============
-
-
-# -------------------------------------------------------------------------------
-def vprint(param, verb, *args):
-    if verb <= param.verb:
-        print(*args)
-
-
-# -------------------------------------------------------------------------------
-def sind(alpha):
-    return np.sin(alpha * np.pi / 180.0)
-
-
-# -------------------------------------------------------------------------------
-def cosd(alpha):
-    return np.cos(alpha * np.pi / 180.0)
-
-
-# -------------------------------------------------------------------------------
-def norm2(x):
-    return np.linalg.norm(x, 2)
-
-
-# -------------------------------------------------------------------------------
-def dist(a, b):
-    return np.sqrt(a**2 + b**2)
-
-
-# -------------------------------------------------------------------------------
-def atan2(y, x):
-    return np.arctan2(y, x)
-
-
-# ============ PLOTTING AND POST-PROCESSING  ==============
-
-
-# -------------------------------------------------------------------------------
-def plot_cpplus(ax, M):
-    # makes a cp plot with outputs printed
-    # INPUT
-    #   M : mfoil structure
-    # OUTPUT
-    #   cp plot on current axes
-
-    chord = M.geom.chord
-    x = M.foil.x[0, :].copy()
-    xrng = np.array([-0.1, 1.4]) * chord
-    if M.oper.viscous:
-        x = np.concatenate((x, M.wake.x[0, :]))
-        colors = ["red", "blue", "black"]
-        for si in range(3):
-            Is = M.vsol.Is[si]
-            ax.plot(x[Is], M.post.cp[Is], "-", color=colors[si], linewidth=2)
-            ax.plot(x[Is], M.post.cpi[Is], "--", color=colors[si], linewidth=2)
-    else:
-        ax.plot(x, M.post.cp, "-", color="blue", linewidth=2)
-
-    if (M.oper.Ma > 0) and (M.param.cps > (min(M.post.cp) - 0.2)):
-        ax.plot(
-            [xrng(1), chord], M.param.cps * [1, 1], "--", color="black", linewidth=2
-        )
-        ax.text(0.8 * chord, M.param.cps - 0.1, r"sonic $c_p$", fontsize=18)
-
-    ax.set_xlim(xrng)
-    ax.invert_yaxis()
-    ax.set_ylabel(r"$c_p$", fontsize=18)
-    ax.tick_params(labelsize=14)
-    ax.spines["bottom"].set_position("zero")
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-
-    # output text box
-    textstr = "\n".join(
-        (
-            r"\underline{%s}" % (M.geom.name),
-            r"$\textrm{Ma} = %.4f$" % (M.oper.Ma),
-            r"$\alpha = %.2f^{\circ}$" % (M.oper.alpha),
-            r"$c_{\ell} = %.4f$" % (M.post.cl),
-            r"$c_{m} = %.4f$" % (M.post.cm),
-            r"$c_{d} = %.6f$" % (M.post.cd),
-        )
-    )
-    ax.text(
-        0.74,
-        0.97,
-        textstr,
-        transform=ax.transAxes,
-        fontsize=16,
-        verticalalignment="top",
-    )
-
-    if M.oper.viscous:
-        textstr = "\n".join(
-            (
-                r"$\textrm{Re} = %.1e$" % (M.oper.Re),
-                r"$c_{df} = %.5f$" % (M.post.cdf),
-                r"$c_{dp} = %.5f$" % (M.post.cdp),
-            )
-        )
-        ax.text(
-            0.74,
-            0.05,
-            textstr,
-            transform=ax.transAxes,
-            fontsize=16,
-            verticalalignment="top",
-        )
-
-
-# -------------------------------------------------------------------------------
-def plot_airfoil(ax, M: Mfoil):
-    """
-    Makes an airfoil plot
-
-    Parameters
-    ----------
-    ax : matplotlib.axes.Axes
-        Axes on which to plot
-    M : Mfoil
-        Mfoil structure
-    """
-
-    chord = M.geom.chord
-    xz = M.foil.x.copy()
-    if M.oper.viscous:
-        xz = np.hstack((xz, M.wake.x))
-    xrng = np.array([-0.1, 1.4]) * chord
-    ax.plot(xz[0, :], xz[1, :], "-", color="black", linewidth=1)
-    ax.axis("equal")
-    ax.set_xlim(xrng)
-    ax.axis("off")
-
-
-# -------------------------------------------------------------------------------
-def mplot_boundary_layer(ax, M: Mfoil):
-    """
-    Makes a plot of the boundary layer
-
-    Parameters
-    ----------
-    ax : matplotlib.axes.Axes
-        Axes on which to plot
-    M : Mfoil
-        Mfoil structure
-    """
-    if not M.oper.viscous:
-        return
-    xz = np.hstack((M.foil.x, M.wake.x))
-    N = M.foil.N
-    ds = M.post.ds  # displacement thickness
-    rl = 0.5 * (1 + (ds[0] - ds[N - 1]) / ds[N])
-    ru = 1 - rl
-    t = np.hstack((M.foil.t, M.wake.t))  # tangents
-    n = np.vstack((-t[1, :], t[0, :]))  # outward normals
-    for i in range(n.shape[1]):
-        n[:, i] /= norm2(n[:, i])
-    xzd = xz + n * ds  # airfoil + delta*
-    ctype = ["red", "blue", "black"]
-    for i in range(4):
-        si = i
-        if si == 2:
-            xzd = xz + n * ds * ru
-        if si == 3:
-            xzd, si = xz - n * ds * rl, 2
-        Is = M.vsol.Is[si]
-        ax.plot(xzd[0, Is], xzd[1, Is], "-", color=ctype[si], linewidth=2)
-
-
-# -------------------------------------------------------------------------------
-def plot_results(M: Mfoil):
-    """
-    Makes a summary results plot with cp, airfoil, BL delta, outputs
-
-    Parameters
-    ----------
-    M : Mfoil
-        Mfoil structure
-    """
-
-    assert M.post.cp is not None, "no cp for results plot"
-
-    # figure parameters
-    plt.rcParams["figure.figsize"] = [8, 7]
-    plt.rcParams["figure.autolayout"] = True
-    plt.rcParams["text.usetex"] = True
-
-    # figure
-    f = plt.figure()
-    ax1 = f.add_subplot(111)
-    gs = gridspec.GridSpec(4, 1)
-    ax1.set_position(gs[0:3].get_position(f))
-    ax1.set_subplotspec(gs[0:3])
-    ax2 = f.add_subplot(gs[3])
-    f.tight_layout()
-    plt.show(block=M.post.rfile is None)
-
-    # cp plot
-    plot_cpplus(ax1, M)
-
-    # airfoil plot
-    plot_airfoil(ax2, M)
-
-    # # BL thickness
-    mplot_boundary_layer(ax2, M)
-
-    if M.post.rfile is not None:
-        plt.savefig(M.post.rfile)
-
-
 # -------------------------------------------------------------------------------
 def calc_force(M: Mfoil):
     """
-    Calculates force and moment coefficients
-    Sets M.post values
+    Calculates force and moment coefficients and updates M.post values
 
     Parameters
     ----------
@@ -468,8 +255,9 @@ def calc_force(M: Mfoil):
 
     Notes
     -----
-    - Lift/moment are computed from a panel pressure integration
+    - Lift and moment are computed from a panel pressure integration
     - The cp distribution is stored as well
+    - Accounts for both inviscid and viscous contributions to the force coefficients
     """
 
     chord = M.geom.chord
@@ -586,7 +374,7 @@ def get_distributions(M: Mfoil):
     ----------
     M : Mfoil
         Mfoil class with a valid solution in M.glob.U
-
+    
     Notes
     -----
     - Relevant for viscous solutions
@@ -712,22 +500,22 @@ def get_ueinv(M: Mfoil):
 # -------------------------------------------------------------------------------
 def get_ueinvref(M: Mfoil) -> NDArray[np.float64, Any]:
     """
-    Computes 0,90deg inviscid tangential velocities at every node.
+    Computes 0,90deg inviscid tangential velocities at every node
 
     Parameters
     ----------
     M : Mfoil
-        Mfoil structure containing the aerodynamic model and data.
+        Mfoil structure containing the aerodynamic model and data
 
     Returns
     -------
     ueinvref : (N+Nw, 2) ndarray
-        0,90 inviscid tangential velocity at all points, including both airfoil (N) and wake (Nw) nodes.
+        0,90 inviscid tangential velocity at all points, including both airfoil (N) and wake (Nw) nodes
 
     Notes
     -----
-    - Utilizes `gamref` for the airfoil to calculate inviscid tangential velocities.
-    - Uses `uewiref` for the wake (if exists) to compute wake contributions.
+    - Utilizes `gamref` for the airfoil to calculate inviscid tangential velocities
+    - Uses `uewiref` for the wake (if exists) to compute wake contributions
     """
 
     assert len(M.isol.gam) > 0, "No inviscid solution"
@@ -746,31 +534,31 @@ def get_ueinvref(M: Mfoil) -> NDArray[np.float64, Any]:
 # -------------------------------------------------------------------------------
 def build_gamma(M: Mfoil, alpha: float):
     """
-    Builds and solves the inviscid linear system for alpha=0, 90, and input angle.
+    Builds and solves the inviscid linear system for alpha=0, 90, and input angle
 
     Parameters
     ----------
     M : Mfoil
-        Mfoil structure that contains the aerodynamic model.
+        Mfoil structure that contains the aerodynamic model
     alpha : float
-        Angle of attack in degrees.
+        Angle of attack in degrees
 
     Updates
     -------
     M.isol.gamref : (N, 2) ndarray
-        0,90deg vorticity distributions at each node.
+        0,90deg vorticity distributions at each node
     M.isol.gam : (N,) ndarray
-        Gamma for the particular input angle, alpha.
+        Gamma for the particular input angle, alpha
     M.isol.AIC : (N+1, N+1) ndarray
-        Aerodynamic influence coefficient matrix, filled in.
+        Aerodynamic influence coefficient matrix, filled in
 
     Notes
     -----
-    - Utilizes a streamfunction approach with constant psi at each node.
-    - Implements a continuous linear vorticity distribution on the airfoil panels.
-    - Enforces the Kutta condition at the trailing edge (TE).
-    - Accounts for TE gap through constant source/vorticity panels.
-    - Handles sharp TE through gamma extrapolation.
+    - Utilizes a streamfunction approach with constant psi at each node
+    - Implements a continuous linear vorticity distribution on the airfoil panels
+    - Enforces the Kutta condition at the trailing edge (TE)
+    - Accounts for TE gap through constant source/vorticity panels
+    - Handles sharp TE through gamma extrapolation
     """
     N = M.foil.N  # number of points
     A = np.zeros([N + 1, N + 1])  # influence matrix
@@ -820,35 +608,35 @@ def build_gamma(M: Mfoil, alpha: float):
 # -------------------------------------------------------------------------------
 def inviscid_velocity(X: NDArray[np.float64, Any], G: NDArray[np.float64, Any], Vinf: float, alpha: float, x: NDArray[np.float64, Any], dolin: bool):
     """
-    Returns the inviscid velocity at a point due to gamma on panels and freestream velocity.
+    Returns the inviscid velocity at a point due to gamma on panels and freestream velocity
 
     Parameters
     ----------
     X : (N, 2) ndarray
-        Coordinates of N panel nodes (N-1 panels).
+        Coordinates of N panel nodes (N-1 panels)
     G : (N,) ndarray
-        Vector of gamma values at each airfoil node.
+        Vector of gamma values at each airfoil node
     Vinf : float
-        Freestream speed magnitude.
+        Freestream speed magnitude
     alpha : float
-        Angle of attack in degrees.
+        Angle of attack in degrees
     x : (2,) ndarray
-        Location of the point at which the velocity vector is desired.
+        Location of the point at which the velocity vector is desired
     dolin : bool
-        True to also return linearization.
+        True to also return linearization
 
     Returns
     -------
     V : (2,) ndarray
         Velocity at the desired point.
     V_G : (2, N) ndarray, optional
-        Linearization of V with respect to G, returned if dolin is True.
+        Linearization of V with respect to G, returned if dolin is True
 
     Notes
     -----
-    - Utilizes linear vortex panels on the airfoil.
-    - Accounts for trailing edge constant source/vortex panel.
-    - Includes the freestream contribution.
+    - Utilizes linear vortex panels on the airfoil
+    - Accounts for trailing edge constant source/vortex panel
+    - Includes the freestream contribution
     """
 
     N = X.shape[1]  # number of points
@@ -921,17 +709,11 @@ def build_wake(M):
 
     # loop over rest of wake
     for i in range(Nw - 1):
-        v1 = inviscid_velocity(
-            M.foil.x, M.isol.gam, Vinf, M.oper.alpha, xyw[:, i], False
-        )
+        v1 = inviscid_velocity(M.foil.x, M.isol.gam, Vinf, M.oper.alpha, xyw[:, i], False)
         v1 = v1 / norm2(v1)
         tw[:, i] = v1  # normalized
-        xyw[:, i + 1] = (
-            xyw[:, i] + (sv[i + 1] - sv[i]) * v1
-        )  # forward Euler (predictor) step
-        v2 = inviscid_velocity(
-            M.foil.x, M.isol.gam, Vinf, M.oper.alpha, xyw[:, i + 1], False
-        )
+        xyw[:, i + 1] = (xyw[:, i] + (sv[i + 1] - sv[i]) * v1)  # forward Euler (predictor) step
+        v2 = inviscid_velocity(M.foil.x, M.isol.gam, Vinf, M.oper.alpha, xyw[:, i + 1], False)
         v2 = v2 / norm2(v2)
         tw[:, i + 1] = v2  # normalized
         xyw[:, i + 1] = xyw[:, i] + (sv[i + 1] - sv[i]) * 0.5 * (
@@ -1043,298 +825,6 @@ def make_panels(M, npanel, stgt):
         M.geom.xpoint, npanel + 1, Ufac, TEfac, stgt
     )
     M.foil.N = M.foil.x.shape[1]
-
-
-# -------------------------------------------------------------------------------
-def TE_info(X):
-    # returns trailing-edge information for an airfoil with node coords X
-    # INPUT
-    #   X : node coordinates, ordered clockwise (2xN)
-    # OUTPUT
-    #   t    : bisector vector = average of upper/lower tangents, normalized
-    #   hTE  : trailing edge gap, measured as a cross-section
-    #   dtdx : thickness slope = d(thickness)/d(wake x)
-    #   tcp  : |t cross p|, used for setting TE source panel strength
-    #   tdp  : t dot p, used for setting TE vortex panel strength
-    # DETAILS
-    #   p refers to the unit vector along the TE panel (from lower to upper)
-
-    t1 = X[:, 0] - X[:, 1]
-    t1 = t1 / norm2(t1)  # lower tangent vector
-    t2 = X[:, -1] - X[:, -2]
-    t2 = t2 / norm2(t2)  # upper tangent vector
-    t = 0.5 * (t1 + t2)
-    t = t / norm2(t)  # average tangent; gap bisector
-    s = X[:, -1] - X[:, 0]  # lower to upper connector vector
-    hTE = -s[0] * t[1] + s[1] * t[0]  # TE gap
-    dtdx = t1[0] * t2[1] - t2[0] * t1[1]  # sin(theta between t1,t2) approx dt/dx
-    p = s / norm2(s)  # unit vector along TE panel
-    tcp = abs(t[0] * p[1] - t[1] * p[0])
-    tdp = np.dot(t, p)
-
-    return t, hTE, dtdx, tcp, tdp
-
-
-# -------------------------------------------------------------------------------
-def panel_info(Xj, xi):
-    # calculates common panel properties (distance, angles)
-    # INPUTS
-    #   Xj    : X(:,[1,2]) = panel endpoint coordinates
-    #   xi    : control point coordinates (2x1)
-    #   vdir  : direction of dot product, or None
-    #   onmid : true means xi is on the panel midpoint
-    # OUTPUTS
-    #   t, n   : panel-aligned tangent and normal vectors
-    #   x, z   : control point coords in panel-aligned coord system
-    #   d      : panel length
-    #   r1, r2 : distances from panel left/right edges to control point
-    #   theta1, theta2 : left/right angles
-
-    # panel coordinates
-    xj1, zj1 = Xj[0, 0], Xj[1, 0]
-    xj2, zj2 = Xj[0, 1], Xj[1, 1]
-
-    # panel-aligned tangent and normal vectors
-    t = np.array([xj2 - xj1, zj2 - zj1])
-    t /= norm2(t)
-    n = np.array([-t[1], t[0]])
-
-    # control point relative to (xj1,zj1)
-    xz = np.array([(xi[0] - xj1), (xi[1] - zj1)])
-    x = np.dot(xz, t)  # in panel-aligned coord system
-    z = np.dot(xz, n)  # in panel-aligned coord system
-
-    # distances and angles
-    d = dist(xj2 - xj1, zj2 - zj1)  # panel length
-    r1 = dist(x, z)  # left edge to control point
-    r2 = dist(x - d, z)  # right edge to control point
-    theta1 = atan2(z, x)  # left angle
-    theta2 = atan2(z, x - d)  # right angle
-
-    return t, n, x, z, d, r1, r2, theta1, theta2
-
-
-# -------------------------------------------------------------------------------
-def panel_linvortex_velocity(Xj, xi, vdir, onmid):
-    # calculates the velocity coefficients for a linear vortex panel
-    # INPUTS
-    #   Xj    : X(:,[1,2]) = panel endpoint coordinates
-    #   xi    : control point coordinates (2x1)
-    #   vdir  : direction of dot product, or None
-    #   onmid : true means xi is on the panel midpoint
-    # OUTPUTS
-    #   a,b   : velocity influence coefficients of the panel
-    # DETAILS
-    #   The velocity due to the panel is then a*g1 + b*g2
-    #   where g1 and g2 are the vortex strengths at the panel endpoints
-    #   If vdir is None, a,b are 2x1 vectors with velocity components
-    #   Otherwise, a,b are dotted with vdir
-
-    # panel info
-    t, n, x, z, d, r1, r2, theta1, theta2 = panel_info(Xj, xi)
-
-    # velocity in panel-aligned coord system
-    if onmid:
-        ug1, ug2 = 1 / 2 - 1 / 4, 1 / 4
-        wg1, wg2 = -1 / (2 * np.pi), 1 / (2 * np.pi)
-    else:
-        temp1 = (theta2 - theta1) / (2 * np.pi)
-        temp2 = (2 * z * np.log(r1 / r2) - 2 * x * (theta2 - theta1)) / (4 * np.pi * d)
-        ug1 = temp1 + temp2
-        ug2 = -temp2
-        temp1 = np.log(r2 / r1) / (2 * np.pi)
-        temp2 = (x * np.log(r1 / r2) - d + z * (theta2 - theta1)) / (2 * np.pi * d)
-        wg1 = temp1 + temp2
-        wg2 = -temp2
-
-    # velocity influence in original coord system
-    a = np.array([ug1 * t[0] + wg1 * n[0], ug1 * t[1] + wg1 * n[1]])  # point 1
-    b = np.array([ug2 * t[0] + wg2 * n[0], ug2 * t[1] + wg2 * n[1]])  # point 2
-    if vdir is not None:
-        a = np.dot(a, vdir)
-        b = np.dot(b, vdir)
-
-    return a, b
-
-
-# -------------------------------------------------------------------------------
-def panel_linvortex_stream(Xj, xi):
-    # calculates the streamfunction coefficients for a linear vortex panel
-    # INPUTS
-    #   Xj  : X(:,[1,2]) = panel endpoint coordinates
-    #   xi  : control point coordinates (2x1)
-    # OUTPUTS
-    #   a,b : streamfunction influence coefficients
-    # DETAILS
-    #   The streamfunction due to the panel is then a*g1 + b*g2
-    #   where g1 and g2 are the vortex strengths at the panel endpoints
-
-    # panel info
-    t, n, x, z, d, r1, r2, theta1, theta2 = panel_info(Xj, xi)
-
-    # check for r1, r2 zero
-    ep = 1e-9
-    logr1 = 0.0 if (r1 < ep) else np.log(r1)
-    logr2 = 0.0 if (r2 < ep) else np.log(r2)
-
-    # streamfunction components
-    P1 = (0.5 / np.pi) * (z * (theta2 - theta1) - d + x * logr1 - (x - d) * logr2)
-    P2 = x * P1 + (0.5 / np.pi) * (
-        0.5 * r2**2 * logr2 - 0.5 * r1**2 * logr1 - r2**2 / 4 + r1**2 / 4
-    )
-
-    # influence coefficients
-    a = P1 - P2 / d
-    b = P2 / d
-
-    return a, b
-
-
-# -------------------------------------------------------------------------------
-def panel_constsource_velocity(Xj, xi, vdir):
-    # calculates the velocity coefficient for a constant source panel
-    # INPUTS
-    #   Xj    : X(:,[1,2]) = panel endpoint coordinates
-    #   xi    : control point coordinates (2x1)
-    #   vdir  : direction of dot product, or None
-    # OUTPUTS
-    #   a     : velocity influence coefficient of the panel
-    # DETAILS
-    #   The velocity due to the panel is then a*s
-    #   where s is the panel source strength
-    #   If vdir is None, a,b are 2x1 vectors with velocity components
-    #   Otherwise, a,b are dotted with vdir
-
-    # panel info
-    t, n, x, z, d, r1, r2, theta1, theta2 = panel_info(Xj, xi)
-
-    ep = 1e-9
-    logr1, theta1, theta2 = (
-        (0, np.pi, np.pi) if (r1 < ep) else (np.log(r1), theta1, theta2)
-    )
-    logr2, theta1, theta2 = (0, 0, 0) if (r2 < ep) else (np.log(r2), theta1, theta2)
-
-    # velocity in panel-aligned coord system
-    u = (0.5 / np.pi) * (logr1 - logr2)
-    w = (0.5 / np.pi) * (theta2 - theta1)
-
-    # velocity in original coord system dotted with given vector
-    a = np.array([u * t[0] + w * n[0], u * t[1] + w * n[1]])
-    if vdir is not None:
-        a = np.dot(a, vdir)
-
-    return a
-
-
-# -------------------------------------------------------------------------------
-def panel_constsource_stream(Xj, xi):
-    # calculates the streamfunction coefficient for a constant source panel
-    # INPUTS
-    #   Xj    : X(:,[1,2]) = panel endpoint coordinates
-    #   xi    : control point coordinates (2x1)
-    # OUTPUTS
-    #   a     : streamfunction influence coefficient of the panel
-    # DETAILS
-    #   The streamfunction due to the panel is then a*s
-    #   where s is the panel source strength
-
-    # panel info
-    t, n, x, z, d, r1, r2, theta1, theta2 = panel_info(Xj, xi)
-
-    # streamfunction
-    ep = 1e-9
-    logr1, theta1, theta2 = (
-        (0, np.pi, np.pi) if (r1 < ep) else (np.log(r1), theta1, theta2)
-    )
-    logr2, theta1, theta2 = (0, 0, 0) if (r2 < ep) else (np.log(r2), theta1, theta2)
-
-    P = (x * (theta1 - theta2) + d * theta2 + z * logr1 - z * logr2) / (2 * np.pi)
-
-    dP = d  # delta psi
-    P = (P - 0.25 * dP) if ((theta1 + theta2) > np.pi) else (P + 0.75 * dP)
-
-    # influence coefficient
-    a = P
-
-    return a
-
-
-# -------------------------------------------------------------------------------
-def panel_linsource_velocity(Xj, xi, vdir):
-    # calculates the velocity coefficients for a linear source panel
-    # INPUTS
-    #   Xj    : X(:,[1,2]) = panel endpoint coordinates
-    #   xi    : control point coordinates (2x1)
-    #   vdir  : direction of dot product
-    # OUTPUTS
-    #   a,b   : velocity influence coefficients of the panel
-    # DETAILS
-    #   The velocity due to the panel is then a*s1 + b*s2
-    #   where s1 and s2 are the source strengths at the panel endpoints
-    #   If vdir is None, a,b are 2x1 vectors with velocity components
-    #   Otherwise, a,b are dotted with vdir
-
-    # panel info
-    t, n, x, z, d, r1, r2, theta1, theta2 = panel_info(Xj, xi)
-
-    # velocity in panel-aligned coord system
-    temp1 = np.log(r1 / r2) / (2 * np.pi)
-    temp2 = (x * np.log(r1 / r2) - d + z * (theta2 - theta1)) / (2 * np.pi * d)
-    ug1 = temp1 - temp2
-    ug2 = temp2
-    temp1 = (theta2 - theta1) / (2 * np.pi)
-    temp2 = (-z * np.log(r1 / r2) + x * (theta2 - theta1)) / (2 * np.pi * d)
-    wg1 = temp1 - temp2
-    wg2 = temp2
-
-    # velocity influence in original coord system
-    a = np.array([ug1 * t[0] + wg1 * n[0], ug1 * t[1] + wg1 * n[1]])  # point 1
-    b = np.array([ug2 * t[0] + wg2 * n[0], ug2 * t[1] + wg2 * n[1]])  # point 2
-    if vdir is not None:
-        a, b = np.dot(a, vdir), np.dot(b, vdir)
-
-    return a, b
-
-
-# -------------------------------------------------------------------------------
-def panel_linsource_stream(Xj, xi):
-    # calculates the streamfunction coefficients for a linear source panel
-    # INPUTS
-    #   Xj  : X(:,[1,2]) = panel endpoint coordinates
-    #   xi  : control point coordinates (2x1)
-    # OUTPUTS
-    #   a,b : streamfunction influence coefficients
-    # DETAILS
-    #   The streamfunction due to the panel is then a*s1 + b*s2
-    #   where s1 and s2 are the source strengths at the panel endpoints
-
-    # panel info
-    t, n, x, z, d, r1, r2, theta1, theta2 = panel_info(Xj, xi)
-
-    # make branch cut at theta = 0
-    if theta1 < 0:
-        theta1 = theta1 + 2 * np.pi
-    if theta2 < 0:
-        theta2 = theta2 + 2 * np.pi
-
-    # check for r1, r2 zero
-    ep = 1e-9
-    logr1, theta1, theta2 = (
-        (0, np.pi, np.pi) if (r1 < ep) else (np.log(r1), theta1, theta2)
-    )
-    logr2, theta1, theta2 = (0, 0, 0) if (r2 < ep) else (np.log(r2), theta1, theta2)
-
-    # streamfunction components
-    P1 = (0.5 / np.pi) * (x * (theta1 - theta2) + theta2 * d + z * logr1 - z * logr2)
-    P2 = x * P1 + (0.5 / np.pi) * (
-        0.5 * r2**2 * theta2 - 0.5 * r1**2 * theta1 - 0.5 * z * d
-    )
-
-    # influence coefficients
-    a = P1 - P2 / d
-    b = P2 / d
-
-    return a, b
 
 
 # ============ GEOMETRY ==============
@@ -2162,7 +1652,7 @@ def update_state(M):
         raise ValueError("imaginary amp in dU")
 
     # max ctau
-    It = np.nonzero(M.vsol.turb is True)[0]
+    It = np.nonzero(M.vsol.turb == True)[0]
     ctmax = max(M.glob.U[2, It])
 
     # starting under-relaxation factor
@@ -2196,7 +1686,7 @@ def update_state(M):
                 vprint(M.param, 3, "  neg sa: omega = %.5f" % (omega))
 
     # prevent big changes in amp
-    I = np.nonzero(M.vsol.turb is False)[0]
+    I = np.nonzero(M.vsol.turb == False)[0]
     if any(np.iscomplex(Uk[I])):
         raise ValueError("imaginary amplification")
     dumax = max(abs(dUk[I]))
@@ -2206,7 +1696,7 @@ def update_state(M):
         vprint(M.param, 3, "  amp: omega = %.5f" % (omega))
 
     # prevent big changes in ctau
-    I = np.nonzero(M.vsol.turb is True)[0]
+    I = np.nonzero(M.vsol.turb == True)[0]
     dumax = max(abs(dUk[I]))
     om = abs(0.05 / dumax) if (dumax > 0) else 1.0
     if om < omega:
@@ -4696,32 +4186,3 @@ def ping_test(M):
     M.glob.U -= 3 * ep * dU
     M.oper.alpha -= 3 * ep * da
     check_ping(ep, v, v_u, "lift calculation")
-
-
-# -------------------------------------------------------------------------------
-def main():
-    # make a NACA 2412 airfoil
-    m = Mfoil(naca="0012", npanel=199)
-    print("NACA geom name =", m.geom.name, "  num. panels =", m.foil.N)
-    # add a flap
-    # m.geom_flap(np.r_[0.8,0],5)
-    # derotate the geometry
-    # m.geom_derotate()
-    # add camber
-    # m.geom_addcamber(np.array([[0,0.3,0.7,1],[0,-.03,.01,0]]))
-    # set up a compressible viscous run (note, alpha is in degrees)
-    m.setoper(alpha=2, Re=5 * 10**6, Ma=0.0)
-    # request plotting, specify the output file for the plot
-    m.param.doplot, m.post.rfile = True, "results.pdf"
-    # set the verbosity (higher -> more output to stdout)
-    m.param.verb = 1
-    # run the solver
-    print("Running the solver.")
-    m.solve()
-    # run the derivative ping check
-    # print('Derivative ping check.')
-    # m.ping()
-
-
-if __name__ == "__main__":
-    main()
