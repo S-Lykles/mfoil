@@ -23,7 +23,7 @@ class Panel:  # paneling
 
 
 # -------------------------------------------------------------------------------
-def make_panels(geom: Geom, npanel: int, stgt) -> Panel:
+def make_panels(geom: Geom, npanel: int, stgt=None) -> Panel:
     # places panels on the current airfoil, as described by geom.xpoint
     # INPUT
     #   M      : mfoil class
