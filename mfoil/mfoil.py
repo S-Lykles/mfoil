@@ -27,11 +27,9 @@
 import numpy as np
 from numpy import ndarray as NDArray
 from scipy import sparse
-import matplotlib.pyplot as plt
-from matplotlib import gridspec
 import copy
-from typing import Tuple, Optional, Any
-from mfoil.utils import vprint, sind, cosd, norm2, dist, atan2
+from typing import Any
+from mfoil.utils import vprint, sind, cosd, norm2
 from mfoil.panel import panel_linvortex_stream, panel_constsource_stream, TE_info, panel_linsource_stream, panel_constsource_velocity, panel_linvortex_velocity, panel_linsource_velocity
 from mfoil.geometry import Geom, Panel, naca_points, set_coords, make_panels, mgeom_flap, mgeom_addcamber, mgeom_derotate, space_geom
 
