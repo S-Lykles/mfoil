@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import numpy as np
-from mfoil.mfoil import Mfoil
+from mfoil.solver import Mfoil
 from mfoil.utils import norm2
 
 

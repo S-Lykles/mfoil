@@ -29,7 +29,7 @@ from numpy import ndarray as NDArray
 from scipy import sparse
 import copy
 from typing import Any
-from mfoil_py.panel import (
+from mfoil.panel import (
     panel_linvortex_stream,
     panel_constsource_stream,
     TE_info,
@@ -38,8 +38,8 @@ from mfoil_py.panel import (
     panel_linvortex_velocity,
     panel_linsource_velocity,
 )
-from mfoil_py.utils import vprint, sind, cosd, norm2
-from mfoil_py.geometry import (
+from mfoil.utils import vprint, sind, cosd, norm2
+from mfoil.geometry import (
     Geom,
     Panel,
     naca_points,
