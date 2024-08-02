@@ -3,7 +3,7 @@ requires = ["setuptools>=45", "setuptools_scm[toml]>=6.2"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "mfoil_py"
+name = "mfoil"
 version = "0.1"
 description = "Package for mfoil"
 authors = [
