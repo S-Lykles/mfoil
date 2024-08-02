@@ -29,8 +29,7 @@ from numpy import ndarray as NDArray
 from scipy import sparse
 import copy
 from typing import Any
-from mfoil.utils import vprint, sind, cosd, norm2
-from mfoil.panel import (
+from mfoil_py.panel import (
     panel_linvortex_stream,
     panel_constsource_stream,
     TE_info,
@@ -39,7 +38,8 @@ from mfoil.panel import (
     panel_linvortex_velocity,
     panel_linsource_velocity,
 )
-from mfoil.geometry import (
+from mfoil_py.utils import vprint, sind, cosd, norm2
+from mfoil_py.geometry import (
     Geom,
     Panel,
     naca_points,
@@ -245,8 +245,8 @@ class Mfoil:
         self.foil = mgeom_derotate(self.geom, self.foil.N)  # derotate: make chordline horizontal
 
     # derivative pinging
-    def ping(M):
-        ping_test(M)
+    def ping(self):
+        ping_test(self)
 
 
 # -------------------------------------------------------------------------------
@@ -675,7 +675,7 @@ def inviscid_velocity(
 
 
 # -------------------------------------------------------------------------------
-def build_wake(M):
+def build_wake(M: Mfoil):
     # builds wake panels from the inviscid solution
     # INPUT
     #   M     : mfoil class with a valid inviscid solution (gam)
@@ -738,7 +738,7 @@ def build_wake(M):
 
 
 # -------------------------------------------------------------------------------
-def stagpoint_find(M):
+def stagpoint_find(M: Mfoil):
     # finds the LE stagnation point on the airfoil (using inviscid solution)
     # INPUTS
     #   M  : mfoil class with inviscid solution, gam
@@ -774,7 +774,7 @@ def stagpoint_find(M):
 
 
 # -------------------------------------------------------------------------------
-def rebuild_isol(M):
+def rebuild_isol(M: Mfoil):
     # rebuilds inviscid solution, after an angle of attack change
     # INPUT
     #   M     : mfoil class with inviscid reference solution and angle of attack
@@ -799,7 +799,7 @@ def rebuild_isol(M):
 
 
 # -------------------------------------------------------------------------------
-def calc_ue_m(M):
+def calc_ue_m(M: Mfoil):
     # calculates sensitivity matrix of ue w.r.t. transpiration BC mass sources
     # INPUT
     #   M : mfoil class with wake already built
@@ -915,7 +915,7 @@ def calc_ue_m(M):
 
 
 # -------------------------------------------------------------------------------
-def rebuild_ue_m(M):
+def rebuild_ue_m(M: Mfoil):
     # rebuilds ue_m matrix after stagnation panel change (new sgnue)
     # INPUT
     #   M : mfoil class with calc_ue_m already called once
@@ -957,7 +957,7 @@ def rebuild_ue_m(M):
 
 
 # -------------------------------------------------------------------------------
-def init_thermo(M):
+def init_thermo(M: Mfoil):
     # initializes thermodynamics variables in param structure
     # INPUT
     #   M  : mfoil class with oper structure set
@@ -988,7 +988,7 @@ def init_thermo(M):
 
 
 # -------------------------------------------------------------------------------
-def identify_surfaces(M):
+def identify_surfaces(M: Mfoil):
     # identifies lower/upper/wake surfaces
     # INPUT
     #   M  : mfoil class with stagnation point found
@@ -1003,7 +1003,7 @@ def identify_surfaces(M):
 
 
 # -------------------------------------------------------------------------------
-def set_wake_gap(M):
+def set_wake_gap(M: Mfoil):
     # sets height (delta*) of dead air in wake
     # INPUT
     #   M  : mfoil class with wake built and stagnation point found
@@ -1026,7 +1026,7 @@ def set_wake_gap(M):
 
 
 # -------------------------------------------------------------------------------
-def stagpoint_move(M):
+def stagpoint_move(M: Mfoil):
     # moves the LE stagnation point on the airfoil using the global solution ue
     # INPUT
     #   M  : mfoil class with a valid solution in M.glob.U
@@ -1098,7 +1098,7 @@ def stagpoint_move(M):
 
 
 # -------------------------------------------------------------------------------
-def solve_viscous(M):
+def solve_viscous(M: Mfoil):
     # solves the viscous system (BL + outer flow concurrently)
     # INPUT
     #   M  : mfoil class with an airfoil
@@ -1122,7 +1122,7 @@ def solve_viscous(M):
 
 
 # -------------------------------------------------------------------------------
-def solve_coupled(M):
+def solve_coupled(M: Mfoil):
     # Solves the coupled inviscid and viscous system
     # INPUT
     #   M  : mfoil class with an inviscid solution
@@ -1186,7 +1186,7 @@ def solve_coupled(M):
 
 
 # -------------------------------------------------------------------------------
-def update_state(M):
+def update_state(M: Mfoil):
     # updates state, taking into account physical constraints
     # INPUT
     #   M  : mfoil class with a valid solution (U) and proposed update (dU)
@@ -1202,7 +1202,7 @@ def update_state(M):
         raise ValueError("imaginary amp in dU")
 
     # max ctau
-    It = np.nonzero(M.vsol.turb == True)[0]
+    It = np.nonzero(M.vsol.turb)[0]
     ctmax = max(M.glob.U[2, It])
 
     # starting under-relaxation factor
@@ -1236,7 +1236,7 @@ def update_state(M):
                 vprint(M.param, 3, "  neg sa: omega = %.5f" % (omega))
 
     # prevent big changes in amp
-    I = np.nonzero(M.vsol.turb == False)[0]
+    I = np.nonzero(M.vsol.turb)[0]
     if any(np.iscomplex(Uk[I])):
         raise ValueError("imaginary amplification")
     dumax = max(abs(dUk[I]))
@@ -1246,7 +1246,7 @@ def update_state(M):
         vprint(M.param, 3, "  amp: omega = %.5f" % (omega))
 
     # prevent big changes in ctau
-    I = np.nonzero(M.vsol.turb == True)[0]
+    I = np.nonzero(M.vsol.turb)[0]
     dumax = max(abs(dUk[I]))
     om = abs(0.05 / dumax) if (dumax > 0) else 1.0
     if om < omega:
@@ -1295,7 +1295,7 @@ def update_state(M):
 
 
 # -------------------------------------------------------------------------------
-def solve_glob(M):
+def solve_glob(M: Mfoil):
     # solves global system for the primary variable update dU
     # INPUT
     #   M  : mfoil class with residual and Jacobian calculated
@@ -1364,7 +1364,7 @@ def solve_glob(M):
 
 
 # -------------------------------------------------------------------------------
-def clalpha_residual(M):
+def clalpha_residual(M: Mfoil):
     # computes cl constraint (or just prescribed alpha) residual and Jacobian
     # INPUT
     #   M  : mfoil class with inviscid solution and post-processed cl_alpha, cl_ue
@@ -1397,7 +1397,7 @@ def clalpha_residual(M):
 
 
 # -------------------------------------------------------------------------------
-def build_glob_sys(M):
+def build_glob_sys(M: Mfoil):
     # builds the primary variable global residual system for the coupled problem
     # INPUT
     #   M  : mfoil class with a valid solution in M.glob.U
@@ -1612,7 +1612,7 @@ def thwaites_init(K, nu):
 
 
 # -------------------------------------------------------------------------------
-def wake_sys(M, param):
+def wake_sys(M, param: Param):
     # constructs residual system corresponding to wake initialization
     # INPUT
     #   param  : parameters
@@ -1658,7 +1658,7 @@ def wake_sys(M, param):
 
 
 # -------------------------------------------------------------------------------
-def wake_init(M, ue):
+def wake_init(M: Mfoil, ue):
     # initializes the first point of the wake, using data in M.glob.U
     # INPUT
     #   ue  : edge velocity at the wake point
@@ -1674,7 +1674,7 @@ def wake_init(M, ue):
 
 
 # -------------------------------------------------------------------------------
-def build_param(M, si):
+def build_param(M: Mfoil, si):
     # builds a parameter structure for side is
     # INPUT
     #   si  : side number, 0 = lower, 1 = upper, 2 = wake
@@ -1689,7 +1689,7 @@ def build_param(M, si):
 
 
 # -------------------------------------------------------------------------------
-def station_param(M, param, i):
+def station_param(M: Mfoil, param: Param, i):
     # modifies parameter structure to be specific for station i
     # INPUT
     #   i  : station number (node index along the surface)
@@ -1700,7 +1700,7 @@ def station_param(M, param, i):
 
 
 # -------------------------------------------------------------------------------
-def init_boundary_layer(M):
+def init_boundary_layer(M: Mfoil):
     # initializes BL solution on foil and wake by marching with given edge vel, ue
     # INPUT
     #   The edge velocity field ue must be filled in on the airfoil and wake
@@ -1925,7 +1925,7 @@ def init_boundary_layer(M):
 
 
 # -------------------------------------------------------------------------------
-def store_transition(M, si, i):
+def store_transition(M: Mfoil, si, i):
     # stores xi and x transition locations using current M.vsol.xt
     # INPUT
     #   si,i : side,station number
@@ -1950,7 +1950,7 @@ def store_transition(M, si, i):
 
 
 # -------------------------------------------------------------------------------
-def update_transition(M):
+def update_transition(M: Mfoil):
     # updates transition location using current state
     # INPUT
     #   a valid state in M.glob.U
@@ -2005,7 +2005,7 @@ def update_transition(M):
 
 
 # -------------------------------------------------------------------------------
-def march_amplification(M, si):
+def march_amplification(M: Mfoil, si):
     # marches amplification equation on surface si
     # INPUT
     #   si : surface number index
@@ -2080,7 +2080,7 @@ def march_amplification(M, si):
 
 
 # -------------------------------------------------------------------------------
-def residual_transition(M, param, x, U, Aux):
+def residual_transition(M: Mfoil, param: Param, x, U, Aux):
     # calculates the combined lam + turb residual for a transition station
     # INPUT
     #   param : parameter structure
@@ -2240,7 +2240,7 @@ def residual_transition(M, param, x, U, Aux):
 
 
 # -------------------------------------------------------------------------------
-def residual_station(param, x, Uin, Aux):
+def residual_station(param: Param, x, Uin, Aux):
     # calculates the viscous residual at one non-transition station
     # INPUT
     #   param : parameter structure
@@ -2462,7 +2462,7 @@ def residual_station(param, x, Uin, Aux):
 
 
 # -------------------------------------------------------------------------------
-def get_upw(U1, U2, param):
+def get_upw(U1, U2, param: Param):
     # calculates a local upwind factor (0.5 = trap; 1 = BE) based on two states
     # INPUT
     #   U1,U2 : first/upwind and second/downwind states (4x1 each)
@@ -2513,7 +2513,7 @@ def upwind(upw, upw_U, f1, f1_U1, f2, f2_U2):
 
 
 # -------------------------------------------------------------------------------
-def get_uq(ds, ds_U, cf, cf_U, Hk, Hk_U, Ret, Ret_U, param):
+def get_uq(ds, ds_U, cf, cf_U, Hk, Hk_U, Ret, Ret_U, param: Param):
     # calculates the equilibrium 1/ue*due/dx
     # INPUT
     #   ds, ds_U   : delta star and linearization (1x4)
@@ -2546,7 +2546,7 @@ def get_uq(ds, ds_U, cf, cf_U, Hk, Hk_U, Ret, Ret_U, param):
 
 
 # -------------------------------------------------------------------------------
-def get_cttr(U, param):
+def get_cttr(U, param: Param):
     # calculates root of the shear stress coefficient at transition
     # INPUT
     #   U     : state vector [th; ds; sa; ue]
@@ -2571,7 +2571,7 @@ def get_cttr(U, param):
 
 
 # -------------------------------------------------------------------------------
-def get_cteq(U, param):
+def get_cteq(U, param: Param):
     # calculates root of the equilibrium shear stress coefficient: sqrt(ctau_eq)
     # INPUT
     #   U     : state vector [th; ds; sa; ue]
@@ -2610,7 +2610,7 @@ def get_cteq(U, param):
 
 
 # -------------------------------------------------------------------------------
-def get_Hs(U, param):
+def get_Hs(U, param: Param):
     # calculates Hs = Hstar = K.E. shape parameter, from U
     # INPUT
     #   U     : state vector [th; ds; sa; ue]
@@ -2677,7 +2677,7 @@ def get_Hs(U, param):
 
 
 # -------------------------------------------------------------------------------
-def get_cp(u, param):
+def get_cp(u, param: Param):
     # calculates pressure coefficient from speed, with compressibility correction
     # INPUT
     #   u     : speed
@@ -2701,7 +2701,7 @@ def get_cp(u, param):
 
 
 # -------------------------------------------------------------------------------
-def get_uk(u, param):
+def get_uk(u, param: Param):
     # calculates Karman-Tsien corrected speed
     # INPUT
     #   u     : incompressible speed
@@ -2724,7 +2724,7 @@ def get_uk(u, param):
 
 
 # -------------------------------------------------------------------------------
-def get_Mach2(U, param):
+def get_Mach2(U, param: Param):
     # calculates squared Mach number
     # INPUT
     #   U     : state vector [th; ds; sa; ue]
@@ -2789,7 +2789,7 @@ def get_Hw(U, wgap):
 
 
 # -------------------------------------------------------------------------------
-def get_Hk(U, param):
+def get_Hk(U, param: Param):
     # calculates Hk = kinematic shape parameter, from U
     # INPUT
     #   U     : state vector [th; ds; sa; ue]
@@ -2816,7 +2816,7 @@ def get_Hk(U, param):
 
 
 # -------------------------------------------------------------------------------
-def get_Hss(U, param):
+def get_Hss(U, param: Param):
     # calculates Hss = density shape parameter, from U
     # INPUT
     #   U     : state vector [th; ds; sa; ue]
@@ -2836,7 +2836,7 @@ def get_Hss(U, param):
 
 
 # -------------------------------------------------------------------------------
-def get_de(U, param):
+def get_de(U, param: Param):
     # calculates simplified BL thickness measure
     # INPUT
     #   U     : state vector [th; ds; sa; ue]
@@ -2860,7 +2860,7 @@ def get_de(U, param):
 
 
 # -------------------------------------------------------------------------------
-def get_rho(U, param):
+def get_rho(U, param: Param):
     # calculates the density (useful if compressible)
     # INPUT
     #   U     : state vector [th; ds; sa; ue]
@@ -2872,7 +2872,7 @@ def get_rho(U, param):
 
     if param.Minf > 0:
         M2, M2_U = get_Mach2(U, param)  # squared edge Mach number
-        uk, uk_u = get_uk(U[3], param)  # corrected speed
+        # uk, uk_u = get_uk(U[3], param)  # corrected speed
         H0, gmi = param.H0, param.gam - 1
         den = 1 + 0.5 * gmi * M2
         den_M2 = 0.5 * gmi
@@ -2886,7 +2886,7 @@ def get_rho(U, param):
 
 
 # -------------------------------------------------------------------------------
-def get_Ret(U, param):
+def get_Ret(U, param: Param):
     # calculates theta Reynolds number, Re_theta, from U
     # INPUT
     #   U     : state vector [th; ds; sa; ue]
@@ -2927,7 +2927,7 @@ def get_Ret(U, param):
 
 
 # -------------------------------------------------------------------------------
-def get_cf(U, param):
+def get_cf(U, param: Param):
     # calculates cf = skin friction coefficient, from U
     # INPUT
     #   U     : state vector [th; ds; sa; ue]
@@ -2984,7 +2984,7 @@ def get_cf(U, param):
 
 
 # -------------------------------------------------------------------------------
-def get_cfxt(U, x, param):
+def get_cfxt(U, x, param: Param):
     # calculates cf*x/theta from the state
     # INPUT
     #   U     : state vector [th; ds; sa; ue]
@@ -3007,7 +3007,7 @@ def get_cfxt(U, x, param):
 
 
 # -------------------------------------------------------------------------------
-def get_cfutstag(Uin, param):
+def get_cfutstag(Uin, param: Param):
     # calculates cf*ue*theta, used in stagnation station calculations
     # INPUT
     #   U     : state vector [th; ds; sa; ue]
@@ -3035,7 +3035,7 @@ def get_cfutstag(Uin, param):
 
 
 # -------------------------------------------------------------------------------
-def get_cdutstag(Uin, param):
+def get_cdutstag(Uin, param: Param):
     # calculates cDi*ue*theta, used in stagnation station calculations
     # INPUT
     #   U     : state vector [th; ds; sa; ue]
@@ -3065,7 +3065,7 @@ def get_cdutstag(Uin, param):
 
 
 # -------------------------------------------------------------------------------
-def get_cDixt(U, x, param):
+def get_cDixt(U, x, param: Param):
     # calculates cDi*x/theta from the state
     # INPUT
     #   U     : state vector [th; ds; sa; ue]
@@ -3088,7 +3088,7 @@ def get_cDixt(U, x, param):
 
 
 # -------------------------------------------------------------------------------
-def get_cDi(U, param):
+def get_cDi(U, param: Param):
     # calculates cDi = dissipation function = 2*cD/H*, from the state
     # INPUT
     #   U     : state vector [th; ds; sa; ue]
@@ -3137,7 +3137,7 @@ def get_cDi(U, param):
 
 
 # -------------------------------------------------------------------------------
-def get_cDi_turbwall(U, param):
+def get_cDi_turbwall(U, param: Param):
     # calculates the turbulent wall contribution to cDi
     # INPUT
     #   U     : state vector [th; ds; sa; ue]
@@ -3172,7 +3172,7 @@ def get_cDi_turbwall(U, param):
 
 
 # -------------------------------------------------------------------------------
-def get_cDi_lam(U, param):
+def get_cDi_lam(U, param: Param):
     # calculates the laminar dissipation function cDi
     # INPUT
     #   U     : state vector [th; ds; sa; ue]
@@ -3201,7 +3201,7 @@ def get_cDi_lam(U, param):
 
 
 # -------------------------------------------------------------------------------
-def get_cDi_lamwake(U, paramin):
+def get_cDi_lamwake(U, paramin: Param):
     # laminar wake dissipation function cDi
     # INPUT
     #   U     : state vector [th; ds; sa; ue]
@@ -3230,7 +3230,7 @@ def get_cDi_lamwake(U, paramin):
 
 
 # -------------------------------------------------------------------------------
-def get_cDi_outer(U, param):
+def get_cDi_outer(U, param: Param):
     # turbulent outer layer contribution to dissipation function cDi
     # INPUT
     #   U     : state vector [th; ds; sa; ue]
@@ -3258,7 +3258,7 @@ def get_cDi_outer(U, param):
 
 
 # -------------------------------------------------------------------------------
-def get_cDi_lamstress(U, param):
+def get_cDi_lamstress(U, param: Param):
     # laminar stress contribution to dissipation function cDi
     # INPUT
     #   U     : state vector [th; ds; sa; ue]
@@ -3284,7 +3284,7 @@ def get_cDi_lamstress(U, param):
 
 
 # -------------------------------------------------------------------------------
-def get_Us(U, param):
+def get_Us(U, param: Param):
     # calculates the normalized wall slip velocity Us
     # INPUT
     #   U     : state vector [th; ds; sa; ue]
@@ -3316,7 +3316,7 @@ def get_Us(U, param):
 
 
 # -------------------------------------------------------------------------------
-def get_damp(U, param):
+def get_damp(U, param: Param):
     # calculates the amplification rate, dn/dx, used in predicting transition
     # INPUT
     #   U     : state vector [th; ds; sa; ue]
@@ -3405,7 +3405,7 @@ def check_ping(ep, v, v_u, sname):
 
 
 # -------------------------------------------------------------------------------
-def ping_test(M):
+def ping_test(M: Mfoil):
     # checks derivatives of various functions through finite-difference pinging
     # INPUT
     #   M : mfoil class
