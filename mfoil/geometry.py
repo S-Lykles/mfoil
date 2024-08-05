@@ -70,11 +70,11 @@ def mgeom_flap(geom: Geom, npanel: int, xzhinge, eta) -> Panel:
         X[:, If[i]] = xzhinge + R @ (X[:, If[i]] - xzhinge)
 
     # remove flap points to left of hinge
-    I = If[X[0, If] < xh]
-    I = np.setdiff1d(np.arange(N), I)
+    idx = If[X[0, If] < xh]
+    idx = np.setdiff1d(np.arange(N), idx)
 
     # re-assemble the airfoil; note, chord length is *not* redefined
-    geom.xpoint = X[:, I]
+    geom.xpoint = X[:, idx]
     geom.npoint = geom.xpoint.shape[1]
 
     # repanel

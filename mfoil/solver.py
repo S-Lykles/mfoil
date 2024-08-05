@@ -1832,7 +1832,7 @@ def init_boundary_layer(M: Mfoil):
                 else:  # inverse mode => Hk is prescribed
                     Hk, Hk_U = get_Hk(U[:, i], param)
                     A = np.vstack((R_U[:, 4:8], Hk_U))
-                    b = np.r_[-R, Hktgt - Hk]
+                    b = np.r_[-R, Hktgt - Hk]  # noqa F281
                     dU = np.linalg.solve(A, b)
 
                 # under-relaxation
@@ -2590,7 +2590,7 @@ def get_cteq(U, param: Param):
         Hkc_U = Hk_U
     else:
         if Hk < 1.05:
-            Hk, HK_U = 1.05, Hk_U * 0.0
+            Hk, HK_U = 1.05, Hk_U * 0.0  # noqa F841
         Hkc = Hk - 1.0 - C / Ret
         Hkc_U = Hk_U + C / Ret**2 * Ret_U
         if Hkc < 0.01:
