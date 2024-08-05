@@ -295,8 +295,8 @@ def calc_force(M: Mfoil):
         cp1, cp2 = cp[ip], cp[i]
         cpbar = 0.5 * (cp1 + cp2)  # average cp on the panel
         cl = cl + dx * cpbar
-        I = [ip, i]
-        cl_ue[I] += dx * 0.5 * cp_ue[I]
+        idx = [ip, i]
+        cl_ue[idx] += dx * 0.5 * cp_ue[idx]
         cl_alpha += cpbar * (sind(alpha) * dxv[0] - cosd(alpha) * dxv[1]) * np.pi / 180
         cm += cp1 * dx1nds / 3 + cp1 * dx2nds / 6 + cp2 * dx1nds / 6 + cp2 * dx2nds / 3
         cdpi = cdpi + dz * cpbar
@@ -755,10 +755,10 @@ def stagpoint_find(M: Mfoil):
         if M.isol.gam[j] > 0:
             break
     assert j < N - 1, "no stagnation point"
-    I = [j - 1, j]
-    G = M.isol.gam[I]
-    S = M.foil.s[I]
-    M.isol.Istag = I  # indices of neighboring gammas
+    idx = [j - 1, j]
+    G = M.isol.gam[idx]
+    S = M.foil.s[idx]
+    M.isol.Istag = idx  # indices of neighboring gammas
     den = G[1] - G[0]
     w1 = G[1] / den
     w2 = -G[0] / den
@@ -766,10 +766,7 @@ def stagpoint_find(M: Mfoil):
     M.isol.xstag = M.foil.x[:, j - 1] * w1 + M.foil.x[:, j] * w2  # x location
     st_g1 = G[1] * (S[0] - S[1]) / (den * den)
     M.isol.sstag_g = np.array([st_g1, -st_g1])
-    sgnue = -1 * np.ones(N)  # upper/lower surface sign
-    for i in range(j, N):
-        sgnue[i] = 1
-    M.isol.sgnue = sgnue
+    M.isol.sgnue = np.sign(M.isol.gam)
     M.isol.xi = np.concatenate((abs(M.foil.s - M.isol.sstag), M.wake.s - M.isol.sstag))
 
 
@@ -865,9 +862,9 @@ def calc_ue_m(M: Mfoil):
 
         # piecewise linear sources across wake panel halves (else singular)
         for j in range(Nw):  # loop over wake points
-            I = [max(j - 1, 0), j, min(j + 1, Nw - 1)]  # left, self, right
+            idx = [max(j - 1, 0), j, min(j + 1, Nw - 1)]  # left, self, right
 
-            Xj = M.wake.x[:, I]  # point coordinates
+            Xj = M.wake.x[:, idx]  # point coordinates
             Xj[:, 0] = 0.5 * (Xj[:, 0] + Xj[:, 1])  # left midpoint
             Xj[:, 2] = 0.5 * (Xj[:, 1] + Xj[:, 2])  # right midpoint
 
@@ -932,7 +929,7 @@ def rebuild_ue_m(M: Mfoil):
 
     # Dp = d(source)/d(mass)  [(N+Nw-2) x (N+Nw)]  (sparse)
     N, Nw = M.foil.N, M.wake.N  # number of points on the airfoil/wake
-    if (type(M.vsol.sigma_m) == list) or not (M.vsol.sigma_m.shape == (N + Nw - 2, N + Nw)):
+    if isinstance(M.vsol.sigma_m, list) or not (M.vsol.sigma_m.shape == (N + Nw - 2, N + Nw)):
         alloc_Dp = True
         M.vsol.sigma_m = sparse.lil_matrix((N + Nw - 2, N + Nw))  # empty matrix
     else:
@@ -1035,44 +1032,44 @@ def stagpoint_move(M: Mfoil):
     #   Possibly new stagnation panel, Istag, and hence new surfaces and matrices
 
     N = M.foil.N  # number of points on the airfoil
-    I = M.isol.Istag  # current adjacent node indices
+    idx = M.isol.Istag  # current adjacent node indices
     ue = M.glob.U[3, :]  # edge velocity
     sstag0 = M.isol.sstag  # original stag point location
 
     newpanel = True  # are we moving to a new panel?
-    if ue[I[1]] < 0:
+    if ue[idx[1]] < 0:
         # move stagnation point up (larger s, new panel)
         vprint(M.param, 2, "  Moving stagnation point up")
-        for j in range(I[1], N):
+        for j in range(idx[1], N):
             if ue[j] > 0:
                 break
         assert j < N, "no stagnation point"
         I1 = j
-        for j in range(I[1], I1):
+        for j in range(idx[1], I1):
             ue[j] *= -1.0
-        I[0], I[1] = I1 - 1, I1  # new panel
-    elif ue[I[0]] < 0:
+        idx[0], idx[1] = I1 - 1, I1  # new panel
+    elif ue[idx[0]] < 0:
         # move stagnation point down (smaller s, new panel)
         vprint(M.param, 2, "  Moving stagnation point down")
-        for j in range(I[0], -1, -1):
+        for j in range(idx[0], -1, -1):
             if ue[j] > 0:
                 break
         assert j > 0, "no stagnation point"
         I0 = j
-        for j in range(I0 + 1, I[0] + 1):
+        for j in range(I0 + 1, idx[0] + 1):
             ue[j] *= -1.0
-        I[0], I[1] = I0, I0 + 1  # new panel
+        idx[0], idx[1] = I0, I0 + 1  # new panel
     else:
         newpanel = False  # staying on the current panel
 
     # move point along panel
-    ues, S = ue[I], M.foil.s[I]
+    ues, S = ue[idx], M.foil.s[idx]
     assert (ues[0] > 0) and (ues[1] > 0), "stagpoint_move: velocity error"
     den = ues[0] + ues[1]
     w1 = ues[1] / den
     w2 = ues[0] / den
     M.isol.sstag = w1 * S[0] + w2 * S[1]  # s location
-    M.isol.xstag = np.dot(M.foil.x[:, I], np.r_[w1, w2])  # x location
+    M.isol.xstag = np.dot(M.foil.x[:, idx], np.r_[w1, w2])  # x location
     M.isol.sstag_ue = np.r_[ues[1], -ues[0]] * (S[1] - S[0]) / (den * den)
     vprint(
         M.param,
@@ -1085,11 +1082,11 @@ def stagpoint_move(M: Mfoil):
 
     # matrices need to be recalculated if on a new panel
     if newpanel:
-        vprint(M.param, 2, "  New stagnation panel = %d %d" % (I[0], I[1]))
-        M.isol.Istag = I  # new panel indices
-        for i in range(I[0] + 1):
+        vprint(M.param, 2, "  New stagnation panel = %d %d" % (idx[0], idx[1]))
+        M.isol.Istag = idx  # new panel indices
+        for i in range(idx[0] + 1):
             M.isol.sgnue[i] = -1
-        for i in range(I[0] + 1, N):
+        for i in range(idx[0] + 1, N):
             M.isol.sgnue[i] = 1
         identify_surfaces(M)  # re-identify surfaces
         M.glob.U[3, :] = ue  # sign of ue changed on some points near stag
@@ -1236,18 +1233,18 @@ def update_state(M: Mfoil):
                 vprint(M.param, 3, "  neg sa: omega = %.5f" % (omega))
 
     # prevent big changes in amp
-    I = np.nonzero(M.vsol.turb)[0]
-    if any(np.iscomplex(Uk[I])):
+    idx = np.nonzero(M.vsol.turb)[0]
+    if any(np.iscomplex(Uk[idx])):
         raise ValueError("imaginary amplification")
-    dumax = max(abs(dUk[I]))
+    dumax = max(abs(dUk[idx]))
     om = abs(2.0 / dumax) if (dumax > 0) else 1.0
     if om < omega:
         omega = om
         vprint(M.param, 3, "  amp: omega = %.5f" % (omega))
 
     # prevent big changes in ctau
-    I = np.nonzero(M.vsol.turb)[0]
-    dumax = max(abs(dUk[I]))
+    idx = np.nonzero(M.vsol.turb)[0]
+    dumax = max(abs(dUk[idx]))
     om = abs(0.05 / dumax) if (dumax > 0) else 1.0
     if om < omega:
         omega = om
@@ -1324,7 +1321,7 @@ def solve_glob(M: Mfoil):
 
     # initialize the global variable Jacobian
     NN = 4 * Nsys + docl
-    if (M.glob.realloc) or (type(M.glob.R_V) == list) or not (M.glob.R_V.shape == (NN, NN)):
+    if (M.glob.realloc) or isinstance(M.glob.R_V, list) or not (M.glob.R_V.shape == (NN, NN)):
         alloc_R_V = True
         M.glob.R_V = sparse.lil_matrix((NN, NN))  # +1 for cl-alpha constraint
     else:
@@ -1341,15 +1338,15 @@ def solve_glob(M: Mfoil):
 
     # assemble the Jacobian
     M.glob.R_V[0 : 3 * Nsys, 0 : 4 * Nsys] = M.glob.R_U
-    I = slice(3 * Nsys, 4 * Nsys, 1)
-    M.glob.R_V[I, Iue] = sparse.identity(Nsys) - M.vsol.ue_m @ np.diag(ds)
-    M.glob.R_V[I, Ids] = -M.vsol.ue_m @ np.diag(ue)
+    idx = slice(3 * Nsys, 4 * Nsys, 1)
+    M.glob.R_V[idx, Iue] = sparse.identity(Nsys) - M.vsol.ue_m @ np.diag(ds)
+    M.glob.R_V[idx, Ids] = -M.vsol.ue_m @ np.diag(ue)
 
     if docl:
         # include cl-alpha residual and Jacobian
         Rcla, Ru_alpha, Rcla_U = clalpha_residual(M)
         R = np.concatenate((R, Rcla))
-        M.glob.R_V[I, 4 * Nsys] = Ru_alpha
+        M.glob.R_V[idx, 4 * Nsys] = Ru_alpha
         M.glob.R_V[4 * Nsys, :] = Rcla_U
 
     # solve system for dU, dalpha
@@ -1414,18 +1411,18 @@ def build_glob_sys(M: Mfoil):
     Nsys = M.glob.Nsys
 
     # allocate matrices if [], if size changed, or if global realloc flag is true
-    if (M.glob.realloc) or (type(M.glob.R) == list) or not (M.glob.R.shape[0] == 3 * Nsys):
+    if (M.glob.realloc) or isinstance(M.glob.R, list) or not (M.glob.R.shape[0] == 3 * Nsys):
         M.glob.R = np.zeros(3 * Nsys)
     else:
         M.glob.R *= 0.0
-    if (M.glob.realloc) or (type(M.glob.R_U) == list) or not (M.glob.R_U.shape == (3 * Nsys, 4 * Nsys)):
+    if (M.glob.realloc) or isinstance(M.glob.R_U, list) or not (M.glob.R_U.shape == (3 * Nsys, 4 * Nsys)):
         alloc_R_U = True
         M.glob.R_U = sparse.lil_matrix((3 * Nsys, 4 * Nsys))
     else:
         alloc_R_U = False
         M.glob.R_U *= 0.0
 
-    if (M.glob.realloc) or (type(M.glob.R_x) == list) or not (M.glob.R_x == (3 * Nsys, Nsys)):
+    if (M.glob.realloc) or isinstance(M.glob.R_x, list) or not (M.glob.R_x == (3 * Nsys, Nsys)):
         alloc_R_x = True
         M.glob.R_x = sparse.lil_matrix((3 * Nsys, Nsys))
     else:
@@ -1811,7 +1808,7 @@ def init_boundary_layer(M: Mfoil):
                     )
                     try:
                         R, R_U, R_x = residual_transition(M, param, xi[Ip], U[:, Ip], Aux[Ip])
-                    except:
+                    except ValueError:
                         vprint(
                             param,
                             1,
@@ -2691,9 +2688,9 @@ def get_cp(u, param: Param):
     cp = 1 - (u / Vinf) ** 2
     cp_u = -2 * u / Vinf**2
     if param.Minf > 0:
-        l, b = param.KTl, param.KTb
-        den = b + 0.5 * l * (1 + b) * cp
-        den_cp = 0.5 * l * (1 + b)
+        KTl, b = param.KTl, param.KTb
+        den = b + 0.5 * KTl * (1 + b) * cp
+        den_cp = 0.5 * KTl * (1 + b)
         cp /= den
         cp_u *= (1 - cp * den_cp) / den
 
@@ -2712,11 +2709,11 @@ def get_uk(u, param: Param):
     #   Uses the Karman-Tsien correction, Minf from param
 
     if param.Minf > 0:
-        l, Vinf = param.KTl, param.Vinf
-        den = 1 - l * (u / Vinf) ** 2
-        den_u = -2 * l * u / Vinf**2
-        uk = u * (1 - l) / den
-        uk_u = (1 - l) / den - (uk / den) * den_u
+        KTl, Vinf = param.KTl, param.Vinf
+        den = 1 - KTl * (u / Vinf) ** 2
+        den_u = -2 * KTl * u / Vinf**2
+        uk = u * (1 - KTl) / den
+        uk_u = (1 - KTl) / den - (uk / den) * den_u
     else:
         uk, uk_u = u, 1.0
 
@@ -2873,7 +2870,7 @@ def get_rho(U, param: Param):
     if param.Minf > 0:
         M2, M2_U = get_Mach2(U, param)  # squared edge Mach number
         # uk, uk_u = get_uk(U[3], param)  # corrected speed
-        H0, gmi = param.H0, param.gam - 1
+        gmi = param.gam - 1
         den = 1 + 0.5 * gmi * M2
         den_M2 = 0.5 * gmi
         rho = param.rho0 / den ** (1 / gmi)
