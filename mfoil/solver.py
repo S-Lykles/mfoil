@@ -51,11 +51,6 @@ from mfoil.geometry import (
     space_geom,
 )
 
-# -------------------------------------------------------------------------------
-
-
-# -------------------------------------------------------------------------------
-
 
 # -------------------------------------------------------------------------------
 class Oper:  # operating conditions and flags
@@ -150,7 +145,7 @@ class Param:  # parameters
     def __init__(self):
         self.verb = 1  # printing verbosity level (higher -> more verbose)
         self.rtol = 1e-10  # residual tolerance for Newton
-        self.niglob = 50  # maximum number of global iterations
+        self.niglob = 400  # maximum number of global iterations
 
         # viscous parameters
         self.ncrit = 9.0  # critical amplification factor
@@ -1128,8 +1123,10 @@ def solve_coupled(M: Mfoil):
     # DETAILS
     #   Inviscid solution should exist, and BL variables should be initialized
     #   The global variables are [th, ds, sa, ue] at every node
-    #   th = momentum thickness; ds = displacement thickness
-    #   sa = amplification factor or sqrt(ctau); ue = edge velocity
+    #   th = momentum thickness
+    #   ds = displacement thickness
+    #   sa = amplification factor or sqrt(ctau)
+    #   ue = edge velocity
     #   Nsys = N + Nw = total number of unknowns
     #   ue is treated as a separate variable for improved solver robustness
     #   The alternative is to eliminate ue, ds and use mass flow (not done here):
@@ -1191,7 +1188,8 @@ def update_state(M: Mfoil):
     # OUTPUT
     #   M.glob.U : updated solution, possibly with a fraction of dU added
     # DETAILS
-    #   U = U + omega * dU; omega = under-relaxation factor
+    #   U = U + omega * dU
+    #   omega = under-relaxation factor
     #   Calculates omega to prevent big changes in the state or negative values
 
     if any(np.iscomplex(M.glob.U[2, :])):
@@ -1610,7 +1608,7 @@ def thwaites_init(K, nu):
 
 
 # -------------------------------------------------------------------------------
-def wake_sys(M, param: Param):
+def wake_sys(M: Mfoil, param: Param):
     # constructs residual system corresponding to wake initialization
     # INPUT
     #   param  : parameters
