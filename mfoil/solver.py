@@ -1149,9 +1149,10 @@ def solve_coupled(M: Mfoil):
         vprint(M.param, 2, "Building global system")
         build_glob_sys(M)
 
-        # compute forces
-        vprint(M.param, 2, "Calculating force")
-        calc_force(M)
+        # compute forces if in cl target mode
+        if M.oper.givencl:
+            vprint(M.param, 2, "Calculating force")
+            calc_force(M)
 
         # convergence check
         Rnorm = norm2(M.glob.R)
