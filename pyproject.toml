@@ -32,7 +32,7 @@ namespaces = false
 [tool.ruff]
 line-length = 120
 unfixable = ["F401"]
-ignore = ["F811"]
+ignore = ["F811", "F403", "F405"]
 indent-width = 2
 
 [tool.ruff.format]
