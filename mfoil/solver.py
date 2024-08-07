@@ -181,7 +181,7 @@ class Mfoil:
         self.foil = Panel()  # airfoil panels
         self.wake = Panel()  # wake panels
         self.oper = Oper()  # operating conditions
-        self.isol = Isol()  # inviscid solution variables
+        self.isol: Isol = Isol()  # inviscid solution variables
         self.vsol = Vsol()  # viscous solution variables
         self.glob = Glob()  # global system variables
         self.post = Post()  # post-processing quantities
@@ -217,8 +217,11 @@ class Mfoil:
     def solve(self):
         if self.oper.viscous:
             solve_viscous(self)
+            calc_force(self)
+            get_distributions(self)
         else:
             solve_inviscid(self)
+            calc_force(self)
 
     # geometry functions
     def geom_flap(self, xzhinge, eta):
@@ -441,8 +444,6 @@ def solve_inviscid(M: Mfoil):
     init_thermo(M)
     M.isol.sgnue = np.ones(M.foil.N)  # do not distinguish sign of ue if inviscid
     build_gamma(M, M.oper.alpha)
-    # if (M.oper.givencl): cltrim_inviscid(M)
-    calc_force(M)
     M.glob.conv = True  # no coupled system ... convergence is guaranteed
 
 
@@ -503,14 +504,13 @@ def get_ueinvref(M: Mfoil) -> NDArray[np.float64]:
     """
 
     assert len(M.isol.gam) > 0, "No inviscid solution"
-    uearef = np.vstack((M.isol.sgnue * M.isol.gamref[:, 0], M.isol.sgnue * M.isol.gamref[:, 1]))
+    uearef = M.isol.sgnue[:, np.newaxis] * M.isol.gamref
     if (M.oper.viscous) and (M.wake.N > 0):
         uewref = M.isol.uewiref  # wake
         uewref[0, :] = uearef[-1, :]  # continuity of upper surface and wake
+        return np.concatenate((uearef, uewref))
     else:
-        uewref = np.array([])
-    ueinvref = np.concatenate((uearef, uewref))
-    return ueinvref.transpose()
+        return uearef
 
 
 # -------------------------------------------------------------------------------
@@ -1102,8 +1102,6 @@ def solve_viscous(M: Mfoil):
     init_boundary_layer(M)  # initialize boundary layer from ue
     stagpoint_move(M)  # move stag point, using viscous solution
     solve_coupled(M)  # solve coupled system
-    calc_force(M)
-    get_distributions(M)
 
 
 # -------------------------------------------------------------------------------
@@ -1335,7 +1333,7 @@ def solve_glob(M: Mfoil):
     if docl:
         # include cl-alpha residual and Jacobian
         Rcla, Ru_alpha, Rcla_U = clalpha_residual(M)
-        R = np.concatenate((R, Rcla))
+        R = np.concatenate((R, np.array([Rcla])))
         M.glob.R_V[idx, 4 * Nsys] = Ru_alpha
         M.glob.R_V[4 * Nsys, :] = Rcla_U
 
@@ -1426,8 +1424,6 @@ def build_glob_sys(M: Mfoil):
         N = len(Is)  # number of points on this surface
         U = M.glob.U[:, Is]  # [th, ds, sa, ue] states at all points on this surface
         Aux = np.zeros(N)  # auxiliary data at all points: [wgap]
-
-        # get parameter structure
 
         # set auxiliary data
         if si == 2:
