@@ -177,7 +177,7 @@ def plot_results(m: Mfoil):
 
     if m.post.rfile is not None:
         plt.savefig(m.post.rfile)
-    
+
     plt.show()
     plt.close()
 
@@ -185,20 +185,20 @@ def plot_results(m: Mfoil):
 # -------------------------------------------------------------------------------
 def main():
     m = Mfoil(naca="2412", npanel=199)
-    m.param.verb = 1
+    m.param.verb = 0
     print("NACA geom name =", m.geom.name, "  num. panels =", m.foil.N)
     # add camber
     # m.geom_addcamber(np.array([[0,0.3,0.7,1],[0,-.03,.01,0]]))
     # set up a compressible viscous run (note, alpha is in degrees)
     # m.geom_flap([0.85, 0], 10)
-    m.setoper(alpha=2, Re=5e6, Ma=0.0)
+    m.setoper(alpha=10, Re=5e6, Ma=0.0)
     # request plotting, specify the output file for the plot
     m.post.rfile = "results.pdf"
     # run the solver
     print("Running the solver.")
     m.solve()
     plot_results(m)
-    m.setoper(alpha=2.2, Re=5e6, Ma=0.0)
+    m.setoper(alpha=10.5, Re=5e6, Ma=0.0)
     m.oper.initbl = False
     m.solve()
     plot_results(m)

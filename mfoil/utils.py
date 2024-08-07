@@ -3,8 +3,9 @@ import numpy as np
 # ============ INPUT, OUTPUT, UTILITY ==============
 
 # -------------------------------------------------------------------------------
-def vprint(param, verb, *args):
-    if verb <= param.verb:
+def vprint(verb_setting, verb, *args):
+    # global verb_setting
+    if verb <= verb_setting:
         print(*args)
 
 

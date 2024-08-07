@@ -25,10 +25,9 @@
 # -------------------------------------------------------------------------------
 
 import numpy as np
-from numpy import ndarray as NDArray
+from numpy.typing import NDArray
+from typing import List
 from scipy import sparse
-import copy
-from typing import Any
 from mfoil.panel import (
     panel_linvortex_stream,
     panel_constsource_stream,
@@ -55,16 +54,16 @@ from mfoil.geometry import (
 # -------------------------------------------------------------------------------
 class Oper:  # operating conditions and flags
     def __init__(self):
-        self.Vinf = 1.0  # velocity magnitude
-        self.alpha = 0.0  # angle of attack, in degrees
-        self.rho = 1.0  # density
-        self.cltgt = 0.0  # lift coefficient target
+        self.Vinf: float = 1.0  # velocity magnitude
+        self.alpha: float = 0.0  # angle of attack, in degrees
+        self.rho: float = 1.0  # density
+        self.cltgt: float = 0.0  # lift coefficient target
         self.givencl = False  # True if cl is given instead of alpha
         self.initbl = True  # True to initialize the boundary layer
         self.viscous = False  # True to do viscous
         self.redowake = False  # True to rebuild wake after alpha changes
-        self.Re = 1e5  # viscous Reynolds number
-        self.Ma = 0.0  # Mach number
+        self.Re: float = 1e5  # viscous Reynolds number
+        self.Ma: float = 0.0  # Mach number
 
 
 # -------------------------------------------------------------------------------
@@ -73,10 +72,10 @@ class Isol:  # inviscid solution variables
         self.AIC = []  # aero influence coeff matrix
         self.gamref = []  # 0,90-deg alpha vortex strengths at airfoil nodes
         self.gam = []  # vortex strengths at airfoil nodes (for current alpha)
-        self.sstag = 0.0  # s location of stagnation point
+        self.sstag: float = 0.0  # s location of stagnation point
         self.sstag_g = np.array([0, 0])  # lin of sstag w.r.t. adjacent gammas
         self.sstag_ue = np.array([0, 0])  # lin of sstag w.r.t. adjacent ue values
-        self.Istag = [0, 0]  # node indices before/after stagnation
+        self.Istag: List[int, int] = [0, 0]  # node indices before/after stagnation
         self.sgnue = []  # +/- 1 on upper/lower surface nodes
         self.xi = []  # distance from the stagnation at all points
         self.uewi = []  # inviscid edge velocity in wake
@@ -94,7 +93,7 @@ class Vsol:  # viscous solution variables
         self.sigma_m = []  # d(source)/d(mass) matrix
         self.ue_sigma = []  # d(ue)/d(source) matrix
         self.turb = []  # flag over nodes indicating if turbulent (1) or lam (0)
-        self.xt = 0.0  # transition location (xi) on current surface under consideration
+        self.xt: float = 0.0  # transition location (xi) on current surface under consideration
         self.Xt = np.zeros((2, 2))  # transition xi/x for lower and upper surfaces
 
 
@@ -103,8 +102,6 @@ class Glob:  # global parameters
     def __init__(self):
         self.Nsys = 0  # number of equations and states
         self.U = []  # primary states (th,ds,sa,ue) [4 x Nsys]
-        self.dU = []  # primary state update
-        self.dalpha = 0.0  # angle of attack update
         self.conv = True  # converged flag
         self.R = []  # residuals [3*Nsys x 1]
         self.R_U = []  # residual Jacobian w.r.t. primary states
@@ -143,42 +140,37 @@ class Post:  # post-processing outputs, distributions
 # -------------------------------------------------------------------------------
 class Param:  # parameters
     def __init__(self):
-        self.verb = 1  # printing verbosity level (higher -> more verbose)
-        self.rtol = 1e-10  # residual tolerance for Newton
-        self.niglob = 400  # maximum number of global iterations
+        self.verb: int = 1  # printing verbosity level (higher -> more verbose)
+        self.rtol: float = 1e-10  # residual tolerance for Newton
+        self.niglob: int = 400  # maximum number of global iterations
 
         # viscous parameters
-        self.ncrit = 9.0  # critical amplification factor
-        self.Cuq = 1.0  # scales the uq term in the shear lag equation
-        self.Dlr = 0.9  # wall/wake dissipation length ratio
-        self.SlagK = 5.6  # shear lag constant
+        self.ncrit: float = 9.0  # critical amplification factor
+        self.Cuq: float = 1.0  # scales the uq term in the shear lag equation
+        self.Dlr: float = 0.9  # wall/wake dissipation length ratio
+        self.SlagK: float = 5.6  # shear lag constant
 
         # initial Ctau after transition
-        self.CtauC = 1.8  # Ctau constant
-        self.CtauE = 3.3  # Ctau exponent
+        self.CtauC: float = 1.8  # Ctau constant
+        self.CtauE: float = 3.3  # Ctau exponent
 
         # G-beta locus: G = GA*sqrt(1+GB*beta) + GC/(H*Rt*sqrt(cf/2))
-        self.GA = 6.7  # G-beta A constant
-        self.GB = 0.75  # G-beta B constant
-        self.GC = 18.0  # G-beta C constant
+        self.GA: float = 6.7  # G-beta A constant
+        self.GB: float = 0.75  # G-beta B constant
+        self.GC: float = 18.0  # G-beta C constant
 
         # operating conditions and thermodynamics
-        self.Minf = 0.0  # freestream Mach number
-        self.Vinf = 0.0  # freestream speed
-        self.muinf = 0.0  # freestream dynamic viscosity
-        self.mu0 = 0.0  # stagnation dynamic viscosity
-        self.rho0 = 1.0  # stagnation density
-        self.H0 = 0.0  # stagnation enthalpy
-        self.Tsrat = 0.35  # Sutherland Ts/Tref
-        self.gam = 1.4  # ratio of specific heats
-        self.KTb = 1.0  # Karman-Tsien beta = sqrt(1-Minf^2)
-        self.KTl = 0.0  # Karman-Tsien lambda = Minf^2/(1+KTb)^2
-        self.cps = 0.0  # sonic cp
-
-        # station information
-        self.simi = False  # true at a similarity station
-        self.turb = False  # true at a turbulent station
-        self.wake = False  # true at a wake station
+        self.Minf: float = 0.0  # freestream Mach number
+        self.Vinf: float = 0.0  # freestream speed
+        self.muinf: float = 0.0  # freestream dynamic viscosity
+        self.mu0: float = 0.0  # stagnation dynamic viscosity
+        self.rho0: float = 1.0  # stagnation density
+        self.H0: float = 0.0  # stagnation enthalpy
+        self.Tsrat: float = 0.35  # Sutherland Ts/Tref
+        self.gam: float = 1.4  # ratio of specific heats
+        self.KTb: float = 1.0  # Karman-Tsien beta = sqrt(1-Minf^2)
+        self.KTl: float = 0.0  # Karman-Tsien lambda = Minf^2/(1+KTb)^2
+        self.cps: float = 0.0  # sonic cp
 
 
 # -------------------------------------------------------------------------------
@@ -195,7 +187,7 @@ class Mfoil:
         self.post = Post()  # post-processing quantities
         self.param = Param()  # parameters
         if coords is not None:
-            set_coords(self, coords)
+            set_coords(self.geom, coords)
         else:
             self.geom = naca_points(naca)
         self.make_panels(npanel)
@@ -268,6 +260,7 @@ def calc_force(M: Mfoil):
     alpha = M.oper.alpha
     qinf = 0.5 * rho * Vinf**2  # dynamic pressure
     N = M.foil.N  # number of points on the airfoil
+    param = M.param
 
     # calculate the pressure coefficient at each node
     ue = M.glob.U[3, :] if M.oper.viscous else get_ueinv(M)
@@ -318,15 +311,13 @@ def calc_force(M: Mfoil):
         Df = 0.0
         for si in range(2):
             Is = M.vsol.Is[si]  # surface point indices
-            param = build_param(M, si)  # get parameter structure
-            station_param(M, param, Is[0])
             cf1 = 0  # first cf value
             ue1 = 0
             rho1 = rho
             x1 = M.isol.xstag
             for i in range(len(Is)):
-                station_param(M, param, Is[i])
-                cf2, cf2_U = get_cf(M.glob.U[:, Is[i]], param)  # get cf value
+                turb = M.vsol.turb[Is[i]]
+                cf2, cf2_U = get_cf(M.glob.U[:, Is[i]], param, turb, wake=False)  # get cf value
                 ue2, ue2_ue = get_uk(M.glob.U[3, Is[i]], param)
                 rho2, rho2_U = get_rho(M.glob.U[:, Is[i]], param)
                 x2 = M.foil.x[:, Is[i]]
@@ -352,7 +343,7 @@ def calc_force(M: Mfoil):
         M.post.cdf,
         M.post.cdp,
     )
-    vprint(M.param, 1, s)
+    vprint(M.param.verb, 1, s)
 
 
 # -------------------------------------------------------------------------------
@@ -380,6 +371,8 @@ def get_distributions(M: Mfoil):
     M.post.ue, uk_ue = get_uk(M.glob.U[3, :], M.param)  # compressible edge velocity
     M.post.uei = get_ueinv(M)  # compressible inviscid edge velocity
 
+    param = M.param
+
     # derived viscous quantities
     N = M.glob.Nsys
     cf = np.zeros(N)
@@ -387,13 +380,13 @@ def get_distributions(M: Mfoil):
     Hk = np.zeros(N)
     for si in range(3):  # loop over surfaces
         Is = M.vsol.Is[si]  # surface point indices
-        param = build_param(M, si)  # get parameter structure
+        wake = si == 2
         for i in range(len(Is)):  # loop over points
             j = Is[i]
             Uj = M.glob.U[:, j]
-            station_param(M, param, j)
+            turb = M.vsol.turb[j]
             uk, uk_ue = get_uk(Uj[3], param)  # corrected edge speed
-            cfloc, cf_u = get_cf(Uj, param)  # local skin friction coefficient
+            cfloc, cf_u = get_cf(Uj, param, turb, wake)  # local skin friction coefficient
             cf[j] = cfloc * uk * uk / (param.Vinf * param.Vinf)  # free-stream-based cf
             Ret[j], Ret_U = get_Ret(Uj, param)  # Re_theta
             Hk[j], Hk_U = get_Hk(Uj, param)  # kinematic shape factor
@@ -489,7 +482,7 @@ def get_ueinv(M: Mfoil):
 
 
 # -------------------------------------------------------------------------------
-def get_ueinvref(M: Mfoil) -> NDArray[np.float64, Any]:
+def get_ueinvref(M: Mfoil) -> NDArray[np.float64]:
     """
     Computes 0,90deg inviscid tangential velocities at every node
 
@@ -555,7 +548,7 @@ def build_gamma(M: Mfoil, alpha: float):
     t, hTE, dtdx, tcp, tdp = TE_info(M.foil.x)  # trailing-edge info
     nogap = abs(hTE) < 1e-10 * M.geom.chord  # indicates no TE gap
 
-    vprint(M.param, 1, "\n <<< Solving the inviscid problem >>> \n")
+    vprint(M.param.verb, 1, "\n <<< Solving the inviscid problem >>> \n")
 
     # Build influence matrix and rhs
     for i in range(N):  # loop over nodes
@@ -596,11 +589,11 @@ def build_gamma(M: Mfoil, alpha: float):
 
 # -------------------------------------------------------------------------------
 def inviscid_velocity(
-    X: NDArray[np.float64, Any],
-    G: NDArray[np.float64, Any],
+    X: NDArray[np.float64],
+    G: NDArray[np.float64],
     Vinf: float,
     alpha: float,
-    x: NDArray[np.float64, Any],
+    x: NDArray[np.float64],
     dolin: bool,
 ):
     """
@@ -776,7 +769,7 @@ def rebuild_isol(M: Mfoil):
     #   New wake and source influence matrix if viscous
 
     assert len(M.isol.gam) > 0, "No inviscid solution"
-    vprint(M.param, 2, "\n  Rebuilding the inviscid solution.")
+    vprint(M.param.verb, 2, "\n  Rebuilding the inviscid solution.")
     alpha = M.oper.alpha
     M.isol.gam = M.isol.gamref[:, 0] * cosd(alpha) + M.isol.gamref[:, 1] * sind(alpha)
     if not M.oper.viscous:
@@ -1034,7 +1027,7 @@ def stagpoint_move(M: Mfoil):
     newpanel = True  # are we moving to a new panel?
     if ue[idx[1]] < 0:
         # move stagnation point up (larger s, new panel)
-        vprint(M.param, 2, "  Moving stagnation point up")
+        vprint(M.param.verb, 2, "  Moving stagnation point up")
         for j in range(idx[1], N):
             if ue[j] > 0:
                 break
@@ -1045,7 +1038,7 @@ def stagpoint_move(M: Mfoil):
         idx[0], idx[1] = I1 - 1, I1  # new panel
     elif ue[idx[0]] < 0:
         # move stagnation point down (smaller s, new panel)
-        vprint(M.param, 2, "  Moving stagnation point down")
+        vprint(M.param.verb, 2, "  Moving stagnation point down")
         for j in range(idx[0], -1, -1):
             if ue[j] > 0:
                 break
@@ -1067,7 +1060,7 @@ def stagpoint_move(M: Mfoil):
     M.isol.xstag = np.dot(M.foil.x[:, idx], np.r_[w1, w2])  # x location
     M.isol.sstag_ue = np.r_[ues[1], -ues[0]] * (S[1] - S[0]) / (den * den)
     vprint(
-        M.param,
+        M.param.verb,
         2,
         "  Moving stagnation point: s=%.15e -> s=%.15e" % (sstag0, M.isol.sstag),
     )
@@ -1077,7 +1070,7 @@ def stagpoint_move(M: Mfoil):
 
     # matrices need to be recalculated if on a new panel
     if newpanel:
-        vprint(M.param, 2, "  New stagnation panel = %d %d" % (idx[0], idx[1]))
+        vprint(M.param.verb, 2, "  New stagnation panel = %d %d" % (idx[0], idx[1]))
         M.isol.Istag = idx  # new panel indices
         for i in range(idx[0] + 1):
             M.isol.sgnue[i] = -1
@@ -1139,49 +1132,49 @@ def solve_coupled(M: Mfoil):
     nNewton = M.param.niglob  # number of iterations
     M.glob.conv = False
     M.glob.realloc = True  # reallocate Jacobian on first iter
-    vprint(M.param, 1, "\n <<< Beginning coupled solver iterations >>>")
+    vprint(M.param.verb, 1, "\n <<< Beginning coupled solver iterations >>>")
 
     for iNewton in range(nNewton):
         # set up the global system
-        vprint(M.param, 2, "Building global system")
+        vprint(M.param.verb, 2, "Building global system")
         build_glob_sys(M)
 
         # compute forces if in cl target mode
         if M.oper.givencl:
-            vprint(M.param, 2, "Calculating force")
+            vprint(M.param.verb, 2, "Calculating force")
             calc_force(M)
 
         # convergence check
         Rnorm = norm2(M.glob.R)
-        vprint(M.param, 1, "\nNewton iteration %d, Rnorm = %.10e" % (iNewton, Rnorm))
+        vprint(M.param.verb, 1, "\nNewton iteration %d, Rnorm = %.10e" % (iNewton, Rnorm))
         if Rnorm < M.param.rtol:
             M.glob.conv = True
             break
 
         # solve global system
-        vprint(M.param, 2, "Solving global system")
-        solve_glob(M)
+        vprint(M.param.verb, 2, "Solving global system")
+        dU, dalpha = solve_glob(M)
 
         # update the state
-        vprint(M.param, 2, "Updating the state")
-        update_state(M)
+        vprint(M.param.verb, 2, "Updating the state")
+        update_state(M, dU, dalpha)
 
         M.glob.realloc = False  # assume Jacobian will not get reallocated
 
         # update stagnation point; Newton still OK; had R_x effects in R_U
-        vprint(M.param, 2, "Moving stagnation point")
+        vprint(M.param.verb, 2, "Moving stagnation point")
         stagpoint_move(M)
 
         # update transition
-        vprint(M.param, 2, "Updating transition")
+        vprint(M.param.verb, 2, "Updating transition")
         update_transition(M)
 
     if not M.glob.conv:
-        vprint(M.param, 1, "\n** Global Newton NOT CONVERGED **\n")
+        vprint(M.param.verb, 1, "\n** Global Newton NOT CONVERGED **\n")
 
 
 # -------------------------------------------------------------------------------
-def update_state(M: Mfoil):
+def update_state(M: Mfoil, dU, dalpha: float):
     # updates state, taking into account physical constraints
     # INPUT
     #   M  : mfoil class with a valid solution (U) and proposed update (dU)
@@ -1194,7 +1187,7 @@ def update_state(M: Mfoil):
 
     if any(np.iscomplex(M.glob.U[2, :])):
         raise ValueError("imaginary amp in U")
-    if any(np.iscomplex(M.glob.dU[2, :])):
+    if any(np.iscomplex(dU[2, :])):
         raise ValueError("imaginary amp in dU")
 
     # max ctau
@@ -1207,17 +1200,17 @@ def update_state(M: Mfoil):
     # first limit theta and delta*
     for k in range(2):
         Uk = M.glob.U[k, :]
-        dUk = M.glob.dU[k, :]
+        dUk = dU[k, :]
         # prevent big decreases in th, ds
         fmin = min(dUk / Uk)  # find most negative ratio
         om = abs(0.5 / fmin) if (fmin < -0.5) else 1.0
         if om < omega:
             omega = om
-            vprint(M.param, 3, "  th/ds decrease: omega = %.5f" % (omega))
+            vprint(M.param.verb, 3, "  th/ds decrease: omega = %.5f" % (omega))
 
     # limit negative amp/ctau
     Uk = M.glob.U[2, :]
-    dUk = M.glob.dU[2, :]
+    dUk = dU[2, :]
     for i in range(len(Uk)):
         if (not M.vsol.turb[i]) and (Uk[i] < 0.2):
             continue  # do not limit very small amp (too restrictive)
@@ -1229,7 +1222,7 @@ def update_state(M: Mfoil):
             om = 0.8 * abs(Uk[i] / dUk[i])
             if om < omega:
                 omega = om
-                vprint(M.param, 3, "  neg sa: omega = %.5f" % (omega))
+                vprint(M.param.verb, 3, "  neg sa: omega = %.5f" % (omega))
 
     # prevent big changes in amp
     idx = np.nonzero(M.vsol.turb)[0]
@@ -1239,7 +1232,7 @@ def update_state(M: Mfoil):
     om = abs(2.0 / dumax) if (dumax > 0) else 1.0
     if om < omega:
         omega = om
-        vprint(M.param, 3, "  amp: omega = %.5f" % (omega))
+        vprint(M.param.verb, 3, "  amp: omega = %.5f" % (omega))
 
     # prevent big changes in ctau
     idx = np.nonzero(M.vsol.turb)[0]
@@ -1247,35 +1240,33 @@ def update_state(M: Mfoil):
     om = abs(0.05 / dumax) if (dumax > 0) else 1.0
     if om < omega:
         omega = om
-        vprint(M.param, 3, "  ctau: omega = %.5f" % (omega))
+        vprint(M.param.verb, 3, "  ctau: omega = %.5f" % (omega))
 
     # prevent large ue changes
-    dUk = M.glob.dU[3, :]
+    dUk = dU[3, :]
     fmax = max(abs(dUk) / M.oper.Vinf)
     om = 0.2 / fmax if (fmax > 0) else 1.0
     if om < omega:
         omega = om
-        vprint(M.param, 3, "  ue: omega = %.5f" % (omega))
+        vprint(M.param.verb, 3, "  ue: omega = %.5f" % (omega))
 
     # prevent large alpha changes
-    if abs(M.glob.dalpha) > 2:
-        omega = min(omega, abs(2 / M.glob.dalpha))
+    if abs(dalpha) > 2:
+        omega = min(omega, abs(2 / dalpha))
 
     # take the update
-    vprint(M.param, 2, "  state update: under-relaxation = %.5f" % (omega))
-    M.glob.U += omega * M.glob.dU
-    M.oper.alpha += omega * M.glob.dalpha
+    vprint(M.param.verb, 2, "  state update: under-relaxation = %.5f" % (omega))
+    M.glob.U += omega * dU
+    M.oper.alpha += omega * dalpha
 
     # fix bad Hk after the update
-    for si in range(3):  # loop over surfaces
-        Hkmin = 1.00005 if (si == 2) else 1.02
-        Is = M.vsol.Is[si]  # surface point indices
-        param = build_param(M, si)  # get parameter structure
+    for side in range(3):  # loop over surfaces
+        Hkmin = 1.00005 if (side == 2) else 1.02
+        Is = M.vsol.Is[side]  # surface point indices
         for i in range(len(Is)):  # loop over points
             j = Is[i]
             Uj = M.glob.U[:, j]
-            station_param(M, param, j)
-            Hk, Hk_U = get_Hk(Uj, param)
+            Hk, Hk_U = get_Hk(Uj, M.param)
             if Hk < Hkmin:
                 M.glob.U[1, j] += 2 * (Hkmin - Hk) * M.glob.U[1, j]
 
@@ -1286,7 +1277,7 @@ def update_state(M: Mfoil):
             M.glob.U[2, i] = 0.1 * ctmax
 
     # rebuild inviscid solution (gam, wake) if angle of attack changed
-    if abs(omega * M.glob.dalpha) > 1e-10:
+    if abs(omega * dalpha) > 1e-10:
         rebuild_isol(M)
 
 
@@ -1354,10 +1345,11 @@ def solve_glob(M: Mfoil):
     dV = -sparse.linalg.spsolve(M.glob.R_V, R)
 
     # store dU, reshaped, in M
-    M.glob.dU = np.reshape(dV[0 : 4 * Nsys], (4, Nsys), order="F")
+    dU = np.reshape(dV[0 : 4 * Nsys], (4, Nsys), order="F")
     if docl:
-        M.glob.dalpha = dV[-1]
-
+        return dU, dV[-1]
+    else:
+        return dU, 0
 
 # -------------------------------------------------------------------------------
 def clalpha_residual(M: Mfoil):
@@ -1436,7 +1428,6 @@ def build_glob_sys(M: Mfoil):
         Aux = np.zeros(N)  # auxiliary data at all points: [wgap]
 
         # get parameter structure
-        param = build_param(M, si)
 
         # set auxiliary data
         if si == 2:
@@ -1450,9 +1441,9 @@ def build_glob_sys(M: Mfoil):
             # calculate the stagnation state, a function of U1 and U2
             Ip = [i0, i0 + 1]
             Ust, Ust_U, Ust_x, xst = stagnation_state(U[:, Ip], xi[Ip])  # stag state
-            param.turb, param.simi = False, True  # similarity station flag
-            R1, R1_Ut, R1_x = residual_station(param, np.r_[xst, xst], np.stack((Ust, Ust), axis=-1), Aux[[i0, i0]])
-            param.simi = False
+            turb, wake, simi = False, False, True  # similarity station flag
+            R1, R1_Ut, R1_x = residual_station(M.param, np.r_[xst, xst], np.stack((Ust, Ust), axis=-1), Aux[[i0, i0]], turb, wake, simi)
+            simi = False
             R1_Ust = R1_Ut[:, 0:4] + R1_Ut[:, 4:8]
             R1_U = np.dot(R1_Ust, Ust_U)
             R1_x = np.dot(R1_Ust, Ust_x)
@@ -1460,7 +1451,7 @@ def build_glob_sys(M: Mfoil):
 
             if i0 == 1:
                 # i0=0 point landed right on stagnation: set value to Ust
-                vprint(param, 2, "hit stagnation!")
+                vprint(M.param.verb, 2, "hit stagnation!")
                 Ig = slice(3 * Is[0], 3 * Is[0] + 3)
                 M.glob.R[Ig] = U[0:3, 0] - Ust[0:3]
                 M.glob.R_U[Ig, 4 * Is[0] : (4 * Is[0] + 4)] += np.eye(3, 4)
@@ -1470,12 +1461,10 @@ def build_glob_sys(M: Mfoil):
 
         else:
             # wake initialization
-            R1, R1_U, J = wake_sys(M, param)
+            R1, R1_U, J = wake_sys(M, M.param)
             R1_x = []  # no xi dependence of first wake residual
-            param.turb, param.wake = (
-                True,
-                True,
-            )  # force turbulent in wake if still laminar
+            # force turbulent in wake if still laminar
+            turb, wake = True, True,
 
         # store first point system in global residual, Jacobian
         Ig = slice(3 * Is[i0], 3 * Is[i0] + 3)
@@ -1497,10 +1486,10 @@ def build_glob_sys(M: Mfoil):
 
             # residual, Jacobian for point i
             if tran:
-                Ri, Ri_U, Ri_x = residual_transition(M, param, xi[Ip], U[:, Ip], Aux[Ip])
+                Ri, Ri_U, Ri_x = residual_transition(M, M.param, xi[Ip], U[:, Ip], Aux[Ip], wake, simi)
                 store_transition(M, si, i)
             else:
-                Ri, Ri_U, Ri_x = residual_station(param, xi[Ip], U[:, Ip], Aux[Ip])
+                Ri, Ri_U, Ri_x = residual_station(M.param, xi[Ip], U[:, Ip], Aux[Ip], turb, wake, simi)
 
             # store point i contribution in global residual, Jacobian
             Ig = slice(3 * Is[i], 3 * Is[i] + 3)
@@ -1515,7 +1504,7 @@ def build_glob_sys(M: Mfoil):
 
             # following transition, all stations will be turbulent
             if tran:
-                param.turb = True
+                turb = True
 
     # include effects of R_x into R_U: R_ue += R_x*x_st*st_ue
     #   The global residual Jacobian has a column for ue sensitivity
@@ -1626,18 +1615,17 @@ def wake_sys(M: Mfoil, param: Param):
     t, hTE, dtdx, tcp, tdp = TE_info(M.foil.x)  # trailing-edge gap is hTE
 
     # Obtain wake shear stress from upper/lower; transition if not turb
-    param.turb = True
-    param.wake = False  # calculating turbulent quantities right before wake
+    turb = True
     if M.vsol.turb[il]:
         ctl = Ul[2]
         ctl_Ul = np.r_[0, 0, 1, 0]  # already turb; use state
     else:
-        ctl, ctl_Ul = get_cttr(Ul, param)  # transition shear stress, lower
+        ctl, ctl_Ul = get_cttr(Ul, param, turb)  # transition shear stress, lower
     if M.vsol.turb[iu]:
         ctu = Uu[2]
         ctu_Uu = np.r_[0, 0, 1, 0]  # already turb; use state
     else:
-        ctu, ctu_Uu = get_cttr(Uu, param)  # transition shear stress, upper
+        ctu, ctu_Uu = get_cttr(Uu, param, turb)  # transition shear stress, upper
     thsum = Ul[0] + Uu[0]  # sum of thetas
     ctw = (ctl * Ul[0] + ctu * Uu[0]) / thsum  # theta-average
     ctw_Ul = (ctl_Ul * Ul[0] + (ctl - ctw) * np.r_[1, 0, 0, 0]) / thsum
@@ -1670,32 +1658,6 @@ def wake_init(M: Mfoil, ue):
 
 
 # -------------------------------------------------------------------------------
-def build_param(M: Mfoil, si):
-    # builds a parameter structure for side is
-    # INPUT
-    #   si  : side number, 0 = lower, 1 = upper, 2 = wake
-    # OUTPUT
-    #   param : M.param structure with side information
-
-    param = copy.deepcopy(M.param)
-    param.wake = si == 2
-    param.turb = param.wake  # the wake is fully turbulent
-    param.simi = False  # true for similarity station
-    return param
-
-
-# -------------------------------------------------------------------------------
-def station_param(M: Mfoil, param: Param, i):
-    # modifies parameter structure to be specific for station i
-    # INPUT
-    #   i  : station number (node index along the surface)
-    # OUTPUT
-    #   param : modified parameter structure
-    param.turb = M.vsol.turb[i]  # turbulent
-    param.simi = i in M.isol.Istag  # similarity
-
-
-# -------------------------------------------------------------------------------
 def init_boundary_layer(M: Mfoil):
     # initializes BL solution on foil and wake by marching with given edge vel, ue
     # INPUT
@@ -1712,19 +1674,19 @@ def init_boundary_layer(M: Mfoil):
 
     # do we need to initialize?
     if (not M.oper.initbl) and (M.glob.U.shape[1] == M.glob.Nsys):
-        vprint(M.param, 1, "\n <<< Starting with current boundary layer >>> \n")
+        vprint(M.param.verb, 1, "\n <<< Starting with current boundary layer >>> \n")
         M.glob.U[3, :] = ueinv  # do set a new edge velocity
         return
 
-    vprint(M.param, 1, "\n <<< Initializing the boundary layer >>> \n")
+    vprint(M.param.verb, 1, "\n <<< Initializing the boundary layer >>> \n")
 
     M.glob.U = np.zeros((4, M.glob.Nsys))  # global solution matrix
     M.vsol.turb = np.zeros(M.glob.Nsys, dtype=int)  # node flag: 0 = lam, 1 = turb
 
-    for si in range(3):  # loop over surfaces
-        vprint(M.param, 3, "\nSide is = %d:\n" % (si))
+    for side in range(3):  # loop over surfaces
+        vprint(M.param.verb, 3, "\nSide is = %d:\n" % (side))
 
-        Is = M.vsol.Is[si]  # surface point indices
+        Is = M.vsol.Is[side]  # surface point indices
         xi = M.isol.xi[Is]  # distance from LE stag point
         ue = ueinv[Is]  # edge velocities
         N = len(Is)  # number of points
@@ -1736,30 +1698,30 @@ def init_boundary_layer(M: Mfoil):
         for i in range(N):
             ue[i] = max(ue[i], 1e-8 * uemax)
 
-        # get parameter structure
-        param = build_param(M, si)
+        wake = side == 2
+        turb = wake  # the wake is fully turbulent
 
         # set auxiliary data
-        if si == 2:
+        if side == 2:
             Aux[:] = M.vsol.wgap
 
         # initialize state at first point
         i0 = 0
-        if si < 2:
+        if side < 2:
             # Solve for the stagnation state (Thwaites initialization + Newton)
             if xi[0] < 1e-8 * xi[-1]:
                 K, hitstag = ue[1] / xi[1], True
             else:
                 K, hitstag = ue[0] / xi[0], False
-            th, ds = thwaites_init(K, param.mu0 / param.rho0)
+            th, ds = thwaites_init(K, M.param.mu0 / M.param.rho0)
             xst = 1.0e-6  # small but nonzero
             Ust = np.array([th, ds, 0, K * xst])
             nNewton = 20
             for iNewton in range(nNewton):
                 # call residual at stagnation
-                param.turb, param.simi = False, True  # similarity station flag
-                R, R_U, R_x = residual_station(param, np.r_[xst, xst], np.stack((Ust, Ust), axis=-1), np.zeros(2))
-                param.simi = False
+                turb, simi = False, True  # similarity station flag
+                R, R_U, R_x = residual_station(M.param, np.r_[xst, xst], np.stack((Ust, Ust), axis=-1), np.zeros(2), turb=False, wake=False, simi=True)
+                simi = False
                 if norm2(R) < 1e-10:
                     break
                 A = R_U[:, 4:7] + R_U[:, 0:3]
@@ -1781,7 +1743,7 @@ def init_boundary_layer(M: Mfoil):
 
         else:  # wake
             U[:, 0] = wake_init(M, ue[0])  # initialize wake state properly
-            param.turb = True  # force turbulent in wake if still laminar
+            turb = True  # force turbulent in wake if still laminar
             M.vsol.turb[Is[0]] = True  # wake starts turbulent
 
         # march over rest of points
@@ -1792,24 +1754,24 @@ def init_boundary_layer(M: Mfoil):
             U[:, i] = U[:, i - 1]
             U[3, i] = ue[i]  # guess = same state, new ue
             if tran:  # set shear stress at transition interval
-                ct, ct_U = get_cttr(U[:, i], param)
+                ct, ct_U = get_cttr(U[:, i], M.param, turb)
                 U[2, i] = ct
-            M.vsol.turb[Is[i]] = tran or param.turb  # flag node i as turbulent
+            M.vsol.turb[Is[i]] = tran or turb  # flag node i as turbulent
             direct = True  # default is direct mode
             nNewton, iNswitch = 30, 12
             for iNewton in range(nNewton):
                 # call residual at this station
                 if tran:  # we are at transition
                     vprint(
-                        param,
+                        M.param.verb,
                         4,
                         "i=%d, residual_transition (iNewton = %d) \n" % (i, iNewton),
                     )
                     try:
-                        R, R_U, R_x = residual_transition(M, param, xi[Ip], U[:, Ip], Aux[Ip])
+                        R, R_U, R_x = residual_transition(M, M.param, xi[Ip], U[:, Ip], Aux[Ip], wake, simi)
                     except ValueError:
                         vprint(
-                            param,
+                            M.param.verb,
                             1,
                             "Transition calculation failed in BL init. Continuing.",
                         )
@@ -1819,8 +1781,8 @@ def init_boundary_layer(M: Mfoil):
                         U[2, i] = ct
                         R = 0  # so we move on
                 else:
-                    vprint(param, 4, "i=%d, residual_station (iNewton = %d)" % (i, iNewton))
-                    R, R_U, R_x = residual_station(param, xi[Ip], U[:, Ip], Aux[Ip])
+                    vprint(M.param.verb, 4, "i=%d, residual_station (iNewton = %d)" % (i, iNewton))
+                    R, R_U, R_x = residual_station(M.param, xi[Ip], U[:, Ip], Aux[Ip], turb, wake, simi)
                 if norm2(R) < 1e-10:
                     break
 
@@ -1829,7 +1791,7 @@ def init_boundary_layer(M: Mfoil):
                     b = -R
                     dU = np.append(np.linalg.solve(A, b), 0)
                 else:  # inverse mode => Hk is prescribed
-                    Hk, Hk_U = get_Hk(U[:, i], param)
+                    Hk, Hk_U = get_Hk(U[:, i], M.param)
                     A = np.vstack((R_U[:, 4:8], Hk_U))
                     b = np.r_[-R, Hktgt - Hk]  # noqa F281
                     dU = np.linalg.solve(A, b)
@@ -1838,7 +1800,7 @@ def init_boundary_layer(M: Mfoil):
                 dm = max(abs(dU[0] / U[0, i - 1]), abs(dU[1] / U[1, i - 1]))
                 if not direct:
                     dm = max(dm, abs(dU[3] / U[3, i - 1]))
-                if param.turb:
+                if turb:
                     dm = max(dm, abs(dU[2] / U[2, i - 1]))
                 elif direct:
                     dm = max(dm, abs(dU[2] / 10))
@@ -1850,36 +1812,36 @@ def init_boundary_layer(M: Mfoil):
                 Ui = U[:, i] + dU
 
                 # clip extreme values
-                if param.turb:
+                if turb:
                     Ui[2] = max(min(Ui[2], 0.3), 1e-7)
-                # Hklim = 1.02; if (param.wake), Hklim = 1.00005; end
-                # [Hk,Hk_U] = get_Hk(Ui, param);
+                # Hklim = 1.02; if (M.param.wake), Hklim = 1.00005; end
+                # [Hk,Hk_U] = get_Hk(Ui, M.param);
                 # dH = max(0,Hklim-Hk); Ui(2) = Ui(2) + dH*Ui(1);
 
                 # check if about to separate
-                Hmax = Hmaxt if (param.turb) else Hmaxl
-                Hk, Hk_U = get_Hk(Ui, param)
+                Hmax = Hmaxt if (turb) else Hmaxl
+                Hk, Hk_U = get_Hk(Ui, M.param)
 
                 if (direct) and ((Hk > Hmax) or (iNewton > iNswitch)):
                     # no update; need to switch to inverse mode: prescribe Hk
                     direct = False
                     vprint(
-                        param,
+                        M.param.verb,
                         2,
                         "** switching to inverse: i=%d, iNewton=%d" % (i, iNewton),
                     )
-                    [Hk, Hk_U] = get_Hk(U[:, i - 1], param)
+                    [Hk, Hk_U] = get_Hk(U[:, i - 1], M.param)
                     Hkr = (xi[i] - xi[i - 1]) / U[0, i - 1]
-                    if param.wake:
+                    if wake:
                         H2 = Hk
                         for k in range(6):
                             H2 -= (H2 + 0.03 * Hkr * (H2 - 1) ** 3 - Hk) / (1 + 0.09 * Hkr * (H2 - 1) ** 2)
                         Hktgt = max(H2, 1.01)
-                    elif param.turb:
+                    elif turb:
                         Hktgt = Hk - 0.15 * Hkr  # turb: decrease in Hk
                     else:
                         Hktgt = Hk + 0.03 * Hkr  # lam: increase in Hk
-                    if not param.wake:
+                    if not wake:
                         Hktgt = max(Hktgt, Hmax)
                     if iNewton > iNswitch:  # reinit
                         U[:, i] = U[:, i - 1]
@@ -1888,11 +1850,11 @@ def init_boundary_layer(M: Mfoil):
                     U[:, i] = Ui  # take the update
 
             if iNewton >= nNewton - 1:
-                vprint(param, 1, "** BL init not converged: si=%d, i=%d **\n" % (si, i))
+                vprint(M.param.verb, 1, "** BL init not converged: si=%d, i=%d **\n" % (side, i))
                 # extrapolate values
                 U[:, i] = U[:, i - 1]
                 U[3, i] = ue[i]
-                if si < 3:
+                if side < 3:
                     U[0, i] = U[0, i - 1] * (xi[i] / xi[i - 1]) ** 0.5
                     U[1, i] = U[1, i - 1] * (xi[i] / xi[i - 1]) ** 0.5
                 else:
@@ -1900,18 +1862,18 @@ def init_boundary_layer(M: Mfoil):
                     U[1, i] = (U[1, i - 1] + U[0, i - 1] * rlen) / (1.0 + rlen)  # TODO check on this extrap
 
             # check for transition
-            if (not param.turb) and (not tran) and (U[2, i] > param.ncrit):
+            if (not turb) and (not tran) and (U[2, i] > M.param.ncrit):
                 vprint(
-                    param,
+                    M.param.verb,
                     2,
-                    "Identified transition at (si=%d, i=%d): n=%.5f, ncrit=%.5f\n" % (si, i, U[2, i], param.ncrit),
+                    "Identified transition at (si=%d, i=%d): n=%.5f, ncrit=%.5f\n" % (side, i, U[2, i], M.param.ncrit),
                 )
                 tran = True
                 continue  # redo station with transition
 
             if tran:
-                store_transition(M, si, i)  # store transition location
-                param.turb = True
+                store_transition(M, side, i)  # store transition location
+                turb = True
                 tran = False  # turbulent after transition
 
             i += 1  # next point
@@ -1935,14 +1897,14 @@ def store_transition(M: Mfoil, si, i):
     x0, x1 = M.foil.x[0, i0], M.foil.x[0, i1]  # x locations at nodes
     if (xt < xi0) or (xt > xi1):
         vprint(
-            M.param,
+            M.param.verb,
             1,
             "Warning: transition (%.3f) off interval (%.3f,%.3f)!" % (xt, xi0, xi1),
         )
     M.vsol.Xt[si, 0] = xt  # xi location
     M.vsol.Xt[si, 1] = x0 + (xt - xi0) / (xi1 - xi0) * (x1 - x0)  # x location
     slu = ["lower", "upper"]
-    vprint(M.param, 1, "  transition on %s side at x=%.5f" % (slu[si], M.vsol.Xt[si, 1]))
+    vprint(M.param.verb, 1, "  transition on %s side at x=%.5f" % (slu[si], M.vsol.Xt[si, 1]))
 
 
 # -------------------------------------------------------------------------------
@@ -1954,12 +1916,9 @@ def update_transition(M: Mfoil):
     #   M.vsol.turb : updated with latest lam/turb flags for each node
     #   M.glob.U    : updated with amp factor or shear stress as needed at each node
 
-    for si in range(2):  # loop over lower/upper surfaces
-        Is = M.vsol.Is[si]  # surface point indices
+    for side in range(2):  # loop over lower/upper surfaces
+        Is = M.vsol.Is[side]  # surface point indices
         N = len(Is)  # number of points
-
-        # get parameter structure
-        param = build_param(M, si)
 
         # current last laminar station
         for ilam0 in range(N):
@@ -1971,18 +1930,18 @@ def update_transition(M: Mfoil):
         sa = M.glob.U[2, Is].copy()
 
         # march amplification equation to get new last laminar station
-        ilam = march_amplification(M, si)
+        ilam = march_amplification(M, side)
 
         if ilam == ilam0:
             M.glob.U[2, Is] = sa[:]  # no change
             continue
 
-        vprint(param, 2, "  Update transition: last lam [%d]->[%d]" % (ilam0, ilam))
+        vprint(M.param.verb, 2, "  Update transition: last lam [%d]->[%d]" % (ilam0, ilam))
 
         if ilam < ilam0:
             # transition is now earlier: fill in turb between [ilam+1, ilam0]
-            param.turb = True
-            sa0, temp = get_cttr(M.glob.U[:, Is[ilam + 1]], param)
+            turb = True
+            sa0, temp = get_cttr(M.glob.U[:, Is[ilam + 1]], M.param, turb)
             sa1 = M.glob.U[2, Is[ilam0 + 1]] if (ilam0 < N - 1) else sa0
             xi = M.isol.xi[Is]
             dx = xi[min(ilam0 + 1, N - 1)] - xi[ilam + 1]
@@ -2008,16 +1967,14 @@ def march_amplification(M: Mfoil, si):
     # OUTPUT
     #   ilam : index of last laminar station before transition
     #   M.glob.U : updated with amp factor at each (new) laminar station
-
+    param = M.param
     Is = M.vsol.Is[si]  # surface point indices
     N = len(Is)  # number of points
-    param = build_param(M, si)  # get parameter structure
     U = M.glob.U[:, Is]  # states
     turb = M.vsol.turb[Is]  # turbulent station flag
 
     # loop over stations, calculate amplification
     U[2, 0] = 0.0  # no amplification at first station
-    param.turb, param.wake = False, False
     i = 1
     while i < N:
         U1, U2 = U[:, i - 1], U[:, i].copy()  # states
@@ -2037,7 +1994,7 @@ def march_amplification(M: Mfoil, si):
 
             if iNewton > 11:
                 vprint(
-                    param,
+                    param.verb,
                     3,
                     "i=%d, iNewton=%d, sa = [%.5e, %.5e], damp = %.5e, Ramp = %.5e"
                     % (i, iNewton, U1[2], U2[2], damp, Ramp),
@@ -2054,12 +2011,12 @@ def march_amplification(M: Mfoil, si):
             U2[2] += omega * dU
 
         if iNewton >= nNewton - 1:
-            vprint(param, 1, "march amp Newton unconverged!")
+            vprint(param.verb, 1, "march amp Newton unconverged!")
 
         # check for transition
         if U2[2] > param.ncrit:
             vprint(
-                param,
+                param.verb,
                 2,
                 "  march_amplification (si,i=%d,%d): %.5e is above critical." % (si, i, U2[2]),
             )
@@ -2076,7 +2033,7 @@ def march_amplification(M: Mfoil, si):
 
 
 # -------------------------------------------------------------------------------
-def residual_transition(M: Mfoil, param: Param, x, U, Aux):
+def residual_transition(M: Mfoil, param: Param, x, U, Aux, wake: bool, simi: bool):
     # calculates the combined lam + turb residual for a transition station
     # INPUT
     #   param : parameter structure
@@ -2109,7 +2066,7 @@ def residual_transition(M: Mfoil, param: Param, x, U, Aux):
     xt = x1 + 0.5 * dx  # guess
     ncrit = param.ncrit  # critical amp factor
     nNewton = 20
-    vprint(param, 3, "  Transition interval = [%.5e, %.5e]" % (x1, x2))
+    vprint(param.verb, 3, "  Transition interval = [%.5e, %.5e]" % (x1, x2))
     #  U1, U2
     for iNewton in range(nNewton):
         w2 = (xt - x1) / dx
@@ -2125,7 +2082,7 @@ def residual_transition(M: Mfoil, param: Param, x, U, Aux):
         Rxt_xt = -0.5 * (damp1 + dampt) - 0.5 * (xt - x1) * np.dot(dampt_Ut, Ut_xt)
         dxt = -Rxt / Rxt_xt
         vprint(
-            param,
+            param.verb,
             4,
             "   Transition: iNewton,Rxt,xt = %d,%.5e,%.5e" % (iNewton, Rxt, xt),
         )
@@ -2138,7 +2095,7 @@ def residual_transition(M: Mfoil, param: Param, x, U, Aux):
             xt += dxt
 
     if iNewton >= nNewton:
-        vprint(param, 1, "Transition location calculation failed.")
+        vprint(param.verb, 1, "Transition location calculation failed.")
     M.vsol.xt = xt  # save transition location
 
     # prepare for xt linearizations
@@ -2183,12 +2140,8 @@ def residual_transition(M: Mfoil, param: Param, x, U, Aux):
     Utt_x1 = Ut_x1.copy()
     Utt_x2 = Ut_x2.copy()
 
-    # parameter structure
-    param = build_param(M, 0)
-
     # set turbulent shear coefficient, sa, in Utt
-    param.turb = True
-    cttr, cttr_Ut = get_cttr(Ut, param)
+    cttr, cttr_Ut = get_cttr(Ut, param, turb=True)
     Utt[2] = cttr
     Utt_U1[2, :] = np.dot(cttr_Ut, Ut_U1)
     Utt_U2[2, :] = np.dot(cttr_Ut, Ut_U2)
@@ -2196,12 +2149,10 @@ def residual_transition(M: Mfoil, param: Param, x, U, Aux):
     Utt_x2[2] = np.dot(cttr_Ut, Ut_x2)
 
     # laminar/turbulent residuals and linearizations
-    param.turb = False
-    Rl, Rl_U, Rl_x = residual_station(param, np.r_[x1, xt], np.stack((U1, Utl), axis=-1), Aux)
+    Rl, Rl_U, Rl_x = residual_station(param, np.r_[x1, xt], np.stack((U1, Utl), axis=-1), Aux, False, False, False)
     Rl_U1 = Rl_U[:, I1]
     Rl_Utl = Rl_U[:, I2]
-    param.turb = True
-    Rt, Rt_U, Rt_x = residual_station(param, np.r_[xt, x2], np.stack((Utt, U2), axis=-1), Aux)
+    Rt, Rt_U, Rt_x = residual_station(param, np.r_[xt, x2], np.stack((Utt, U2), axis=-1), Aux, True, False, False)
     Rt_Utt = Rt_U[:, I1]
     Rt_U2 = Rt_U[:, I2]
 
@@ -2236,7 +2187,7 @@ def residual_transition(M: Mfoil, param: Param, x, U, Aux):
 
 
 # -------------------------------------------------------------------------------
-def residual_station(param: Param, x, Uin, Aux):
+def residual_station(param: Param, x, Uin, Aux, turb: bool, wake: bool, simi: bool):
     # calculates the viscous residual at one non-transition station
     # INPUT
     #   param : parameter structure
@@ -2279,7 +2230,7 @@ def residual_station(param: Param, x, Uin, Aux):
     dx_x = np.r_[-1.0, 1.0]
 
     # upwinding factor
-    upw, upw_U = get_upw(U1, U2, param)
+    upw, upw_U = get_upw(U1, U2, param, wake)
 
     # shape parameter
     H1, H1_U1 = get_H(U1)
@@ -2288,8 +2239,8 @@ def residual_station(param: Param, x, Uin, Aux):
     H_U = 0.5 * np.r_[H1_U1, H2_U2]
 
     # Hstar = KE shape parameter, averaged
-    Hs1, Hs1_U1 = get_Hs(U1, param)
-    Hs2, Hs2_U2 = get_Hs(U2, param)
+    Hs1, Hs1_U1 = get_Hs(U1, param, turb, wake)
+    Hs2, Hs2_U2 = get_Hs(U2, param, turb, wake)
     Hs, Hs_U = upwind(0.5, 0, Hs1, Hs1_U1, Hs2, Hs2_U2)
 
     # log change in Hstar
@@ -2297,7 +2248,7 @@ def residual_station(param: Param, x, Uin, Aux):
     Hslog_U = np.r_[-1.0 / Hs1 * Hs1_U1, 1.0 / Hs2 * Hs2_U2]
 
     # similarity station is special: U1 = U2, x1 = x2
-    if param.simi:
+    if simi:
         thlog = 0.0
         thlog_U *= 0.0
         Hslog = 0.0
@@ -2316,7 +2267,7 @@ def residual_station(param: Param, x, Uin, Aux):
     Hw_U = 0.5 * np.r_[Hw1_U1, Hw2_U2]
 
     # set up shear lag or amplification factor equation
-    if param.turb:
+    if turb:
         # log change of root shear stress coeff
         salog = np.log(sa[1] / sa[0])
         salog_U = np.r_[0, 0, -1.0 / sa[0], 0, 0, 0, 1.0 / sa[1], 0]
@@ -2327,8 +2278,8 @@ def residual_station(param: Param, x, Uin, Aux):
         de, de_U = upwind(0.5, 0, de1, de1_U1, de2, de2_U2)
 
         # normalized slip velocity, averaged
-        Us1, Us1_U1 = get_Us(U1, param)
-        Us2, Us2_U2 = get_Us(U2, param)
+        Us1, Us1_U1 = get_Us(U1, param, turb, wake)
+        Us2, Us2_U2 = get_Us(U2, param, turb, wake)
         Us, Us_U = upwind(0.5, 0, Us1, Us1_U1, Us2, Us2_U2)
 
         # Hk, upwinded
@@ -2342,8 +2293,8 @@ def residual_station(param: Param, x, Uin, Aux):
         Ret, Ret_U = upwind(0.5, 0, Ret1, Ret1_U1, Ret2, Ret2_U2)
 
         # skin friction, upwinded
-        cf1, cf1_U1 = get_cf(U1, param)
-        cf2, cf2_U2 = get_cf(U2, param)
+        cf1, cf1_U1 = get_cf(U1, param, turb, wake)
+        cf2, cf2_U2 = get_cf(U2, param, turb, wake)
         cf, cf_U = upwind(upw, upw_U, cf1, cf1_U1, cf2, cf2_U2)
 
         # displacement thickness, averaged
@@ -2351,11 +2302,11 @@ def residual_station(param: Param, x, Uin, Aux):
         dsa_U = 0.5 * np.r_[0, 1, 0, 0, 0, 1, 0, 0]
 
         # uq = equilibrium 1/ue * due/dx
-        uq, uq_U = get_uq(dsa, dsa_U, cf, cf_U, Hk, Hk_U, Ret, Ret_U, param)
+        uq, uq_U = get_uq(dsa, dsa_U, cf, cf_U, Hk, Hk_U, Ret, Ret_U, param, wake)
 
         # cteq = root equilibrium wake layer shear coeficient: (ctau eq)^.5
-        cteq1, cteq1_U1 = get_cteq(U1, param)
-        cteq2, cteq2_U2 = get_cteq(U2, param)
+        cteq1, cteq1_U1 = get_cteq(U1, param, turb, wake)
+        cteq2, cteq2_U2 = get_cteq(U2, param, turb, wake)
         cteq, cteq_U = upwind(upw, upw_U, cteq1, cteq1_U1, cteq2, cteq2_U2)
 
         # root of shear coefficient (a state), upwinded
@@ -2369,7 +2320,7 @@ def residual_station(param: Param, x, Uin, Aux):
 
         # extra dissipation in wake
         ald = 1.0
-        if param.wake:
+        if wake:
             ald = param.Dlr
 
         # shear lag equation
@@ -2387,7 +2338,7 @@ def residual_station(param: Param, x, Uin, Aux):
     else:
         # laminar, amplification factor equation
 
-        if param.simi:
+        if simi:
             # similarity station
             Rlag = sa[0] + sa[1]  # no amplification
             Rlag_U = np.array([0, 0, 1, 0, 0, 0, 1, 0])
@@ -2410,9 +2361,9 @@ def residual_station(param: Param, x, Uin, Aux):
     Ms, Ms_U = upwind(0.5, 0, Ms1, Ms1_U1, Ms2, Ms2_U2)
 
     # skin friction * x/theta, symmetrical average
-    cfxt1, cfxt1_U1, cfxt1_x1 = get_cfxt(U1, x[0], param)
-    cfxt2, cfxt2_U2, cfxt2_x2 = get_cfxt(U2, x[1], param)
-    cfxtm, cfxtm_Um, cfxtm_xm = get_cfxt(Um, 0.5 * (x[0] + x[1]), param)
+    cfxt1, cfxt1_U1, cfxt1_x1 = get_cfxt(U1, x[0], param, turb, wake)
+    cfxt2, cfxt2_U2, cfxt2_x2 = get_cfxt(U2, x[1], param, turb, wake)
+    cfxtm, cfxtm_Um, cfxtm_xm = get_cfxt(Um, 0.5 * (x[0] + x[1]), param, turb, wake)
     cfxt = 0.25 * cfxt1 + 0.5 * cfxtm + 0.25 * cfxt2
     cfxt_U = 0.25 * np.concatenate((cfxt1_U1 + cfxtm_Um, cfxtm_Um + cfxt2_U2))
     cfxt_x = 0.25 * np.array([cfxt1_x1 + cfxtm_xm, cfxtm_xm + cfxt2_x2])
@@ -2423,8 +2374,8 @@ def residual_station(param: Param, x, Uin, Aux):
     Rmom_x = -0.5 * xlog_x * cfxt - 0.5 * xlog * cfxt_x
 
     # dissipation function times x/theta: cDi = (2*cD/H*)*x/theta, upwinded
-    cDixt1, cDixt1_U1, cDixt1_x1 = get_cDixt(U1, x[0], param)
-    cDixt2, cDixt2_U2, cDixt2_x2 = get_cDixt(U2, x[1], param)
+    cDixt1, cDixt1_U1, cDixt1_x1 = get_cDixt(U1, x[0], param, turb, wake)
+    cDixt2, cDixt2_U2, cDixt2_x2 = get_cDixt(U2, x[1], param, turb, wake)
     cDixt, cDixt_U = upwind(upw, upw_U, cDixt1, cDixt1_U1, cDixt2, cDixt2_U2)
     cDixt_x = np.array([(1.0 - upw) * cDixt1_x1, upw * cDixt2_x2])
 
@@ -2458,7 +2409,7 @@ def residual_station(param: Param, x, Uin, Aux):
 
 
 # -------------------------------------------------------------------------------
-def get_upw(U1, U2, param: Param):
+def get_upw(U1, U2, param: Param, wake: bool):
     # calculates a local upwind factor (0.5 = trap; 1 = BE) based on two states
     # INPUT
     #   U1,U2 : first/upwind and second/downwind states (4x1 each)
@@ -2474,7 +2425,7 @@ def get_upw(U1, U2, param: Param):
     Hk2, Hk2_U2 = get_Hk(U2, param)
     Z = np.zeros(Hk1_U1.shape)
     Hut = 1.0  # triggering constant for upwinding
-    C = 1.0 if (param.wake) else 5.0
+    C = 1.0 if (wake) else 5.0
     Huc = C * Hut / Hk2**2  # only depends on U2
     Huc_U = np.concatenate((Z, -2 * Huc / Hk2 * Hk2_U2))
     aa = (Hk2 - 1.0) / (Hk1 - 1.0)
@@ -2509,7 +2460,7 @@ def upwind(upw, upw_U, f1, f1_U1, f2, f2_U2):
 
 
 # -------------------------------------------------------------------------------
-def get_uq(ds, ds_U, cf, cf_U, Hk, Hk_U, Ret, Ret_U, param: Param):
+def get_uq(ds, ds_U, cf, cf_U, Hk, Hk_U, Ret, Ret_U, param: Param, wake: bool):
     # calculates the equilibrium 1/ue*due/dx
     # INPUT
     #   ds, ds_U   : delta star and linearization (1x4)
@@ -2521,12 +2472,12 @@ def get_uq(ds, ds_U, cf, cf_U, Hk, Hk_U, Ret, Ret_U, param: Param):
     #   uq, uq_U   : equilibrium 1/ue*due/dx and linearization w.r.t. state (1x4)
 
     beta, A, C = param.GB, param.GA, param.GC
-    if param.wake:
+    if wake:
         A, C = A * param.Dlr, 0.0
     # limit Hk (TODO smooth/eliminate)
-    if (param.wake) and (Hk < 1.00005):
+    if (wake) and (Hk < 1.00005):
         Hk, Hk_U = 1.00005, Hk_U * 0.0
-    if (not param.wake) and (Hk < 1.05):
+    if (not wake) and (Hk < 1.05):
         Hk, Hk_U = 1.05, Hk_U * 0.0
     Hkc = Hk - 1.0 - C / Ret
     Hkc_U = Hk_U + C / Ret**2 * Ret_U
@@ -2542,7 +2493,7 @@ def get_uq(ds, ds_U, cf, cf_U, Hk, Hk_U, Ret, Ret_U, param: Param):
 
 
 # -------------------------------------------------------------------------------
-def get_cttr(U, param: Param):
+def get_cttr(U, param: Param, turb: bool):
     # calculates root of the shear stress coefficient at transition
     # INPUT
     #   U     : state vector [th; ds; sa; ue]
@@ -2552,8 +2503,8 @@ def get_cttr(U, param: Param):
     # DETAILS
     #   used to initialize the first turb station after transition
 
-    param.wake = False  # transition happens just before the wake starts
-    cteq, cteq_U = get_cteq(U, param)
+    wake = False  # transition happens just before the wake starts
+    cteq, cteq_U = get_cteq(U, param, turb, wake)
     Hk, Hk_U = get_Hk(U, param)
     if Hk < 1.05:
         Hk, Hk_U = 1.05, Hk_U * 0.0
@@ -2567,7 +2518,7 @@ def get_cttr(U, param: Param):
 
 
 # -------------------------------------------------------------------------------
-def get_cteq(U, param: Param):
+def get_cteq(U, param: Param, turb: bool, wake: bool):
     # calculates root of the equilibrium shear stress coefficient: sqrt(ctau_eq)
     # INPUT
     #   U     : state vector [th; ds; sa; ue]
@@ -2578,11 +2529,11 @@ def get_cteq(U, param: Param):
     #   uses equilibrium shear stress correlations
     CC, C = 0.5 / (param.GA**2 * param.GB), param.GC
     Hk, Hk_U = get_Hk(U, param)
-    Hs, Hs_U = get_Hs(U, param)
+    Hs, Hs_U = get_Hs(U, param, turb, wake)
     H, H_U = get_H(U)
     Ret, Ret_U = get_Ret(U, param)
-    Us, Us_U = get_Us(U, param)
-    if param.wake:
+    Us, Us_U = get_Us(U, param, turb, wake)
+    if wake:
         if Hk < 1.00005:
             Hk, Hk_U = 1.00005, Hk_U * 0.0
         Hkc = Hk - 1.0
@@ -2606,7 +2557,7 @@ def get_cteq(U, param: Param):
 
 
 # -------------------------------------------------------------------------------
-def get_Hs(U, param: Param):
+def get_Hs(U, param: Param, turb: bool, wake: bool):
     # calculates Hs = Hstar = K.E. shape parameter, from U
     # INPUT
     #   U     : state vector [th; ds; sa; ue]
@@ -2618,12 +2569,12 @@ def get_Hs(U, param: Param):
     Hk, Hk_U = get_Hk(U, param)
 
     # limit Hk (TODO smooth/eliminate)
-    if (param.wake) and (Hk < 1.00005):
+    if (wake) and (Hk < 1.00005):
         Hk, Hk_U = 1.00005, Hk_U * 0.0
-    if (not param.wake) and (Hk < 1.05):
+    if (not wake) and (Hk < 1.05):
         Hk, Hk_U = 1.05, Hk_U * 0.0
 
-    if param.turb:  # turbulent
+    if turb:  # turbulent
         Hsmin, dHsinf = 1.5, 0.015
         Ret, Ret_U = get_Ret(U, param)
         # limit Re_theta and dependence
@@ -2923,7 +2874,7 @@ def get_Ret(U, param: Param):
 
 
 # -------------------------------------------------------------------------------
-def get_cf(U, param: Param):
+def get_cf(U, param: Param, turb: bool, wake: bool):
     # calculates cf = skin friction coefficient, from U
     # INPUT
     #   U     : state vector [th; ds; sa; ue]
@@ -2934,14 +2885,14 @@ def get_cf(U, param: Param):
     #   cf is the local skin friction coefficient = tau/(0.5*rho*ue^2)
     #   Correlations are used based on Hk and Re_theta
 
-    if param.wake:
+    if wake:
         return 0, np.zeros(4)  # zero cf in wake
     Hk, Hk_U = get_Hk(U, param)
     Ret, Ret_U = get_Ret(U, param)
 
     # TODO: limit Hk
 
-    if param.turb:  # turbulent cf
+    if turb:  # turbulent cf
         M2, M2_U = get_Mach2(U, param)  # squared edge Mach number
         Fc = np.sqrt(1 + 0.5 * (param.gam - 1) * M2)
         Fc_U = 0.5 / Fc * 0.5 * (param.gam - 1) * M2_U
@@ -2980,7 +2931,7 @@ def get_cf(U, param: Param):
 
 
 # -------------------------------------------------------------------------------
-def get_cfxt(U, x, param: Param):
+def get_cfxt(U, x, param: Param, turb: bool, wake: bool):
     # calculates cf*x/theta from the state
     # INPUT
     #   U     : state vector [th; ds; sa; ue]
@@ -2993,7 +2944,7 @@ def get_cfxt(U, x, param: Param):
     # DETAILS
     #   This combination appears in the momentum and shape parameter equations
 
-    cf, cf_U = get_cf(U, param)
+    cf, cf_U = get_cf(U, param, turb, wake)
     cfxt = cf * x / U[0]
     cfxt_U = cf_U * x / U[0]
     cfxt_U[0] = cfxt_U[0] - cfxt / U[0]
@@ -3061,7 +3012,7 @@ def get_cdutstag(Uin, param: Param):
 
 
 # -------------------------------------------------------------------------------
-def get_cDixt(U, x, param: Param):
+def get_cDixt(U, x, param: Param, turb: bool, wake: bool):
     # calculates cDi*x/theta from the state
     # INPUT
     #   U     : state vector [th; ds; sa; ue]
@@ -3074,7 +3025,7 @@ def get_cDixt(U, x, param: Param):
     # DETAILS
     #   cDi is the dissipation function
 
-    cDi, cDi_U = get_cDi(U, param)
+    cDi, cDi_U = get_cDi(U, param, turb, wake)
     cDixt = cDi * x / U[0]
     cDixt_U = cDi_U * x / U[0]
     cDixt_U[0] = cDixt_U[0] - cDixt / U[0]
@@ -3084,7 +3035,7 @@ def get_cDixt(U, x, param: Param):
 
 
 # -------------------------------------------------------------------------------
-def get_cDi(U, param: Param):
+def get_cDi(U, param: Param, turb: bool, wake):
     # calculates cDi = dissipation function = 2*cD/H*, from the state
     # INPUT
     #   U     : state vector [th; ds; sa; ue]
@@ -3095,13 +3046,13 @@ def get_cDi(U, param: Param):
     #   cD is the dissipation coefficient, int(tau*du/dn*dn)/(rho*ue^3)
     #   The combination with H* appears in the shape parameter equation
 
-    if param.turb:  # turbulent includes wake
+    if turb:  # turbulent includes wake
         # initialize to 0; will add components that are needed
         cDi, cDi_U = 0, np.zeros(4)
 
-        if not param.wake:
+        if not wake:
             # turbulent wall contribution (0 in the wake)
-            cDi0, cDi0_U = get_cDi_turbwall(U, param)
+            cDi0, cDi0_U = get_cDi_turbwall(U, param, wake)
             cDi = cDi + cDi0
             cDi_U = cDi_U + cDi0_U
             cDil, cDil_U = get_cDi_lam(U, param)  # for max check
@@ -3109,12 +3060,12 @@ def get_cDi(U, param: Param):
             cDil, cDil_U = get_cDi_lamwake(U, param)  # for max check
 
         # outer layer contribution
-        cDi0, cDi0_U = get_cDi_outer(U, param)
+        cDi0, cDi0_U = get_cDi_outer(U, param, turb, wake)
         cDi = cDi + cDi0
         cDi_U = cDi_U + cDi0_U
 
         # laminar stress contribution
-        cDi0, cDi0_U = get_cDi_lamstress(U, param)
+        cDi0, cDi0_U = get_cDi_lamstress(U, param, turb, wake)
         cDi = cDi + cDi0
         cDi_U = cDi_U + cDi0_U
 
@@ -3123,7 +3074,7 @@ def get_cDi(U, param: Param):
             cDi, cDi_U = cDil, cDil_U
 
         # double dissipation in the wake
-        if param.wake:
+        if wake:
             cDi, cDi_U = 2 * cDi, 2 * cDi_U
     else:
         # just laminar dissipation
@@ -3133,7 +3084,7 @@ def get_cDi(U, param: Param):
 
 
 # -------------------------------------------------------------------------------
-def get_cDi_turbwall(U, param: Param):
+def get_cDi_turbwall(U, param: Param, wake: bool):
     # calculates the turbulent wall contribution to cDi
     # INPUT
     #   U     : state vector [th; ds; sa; ue]
@@ -3142,15 +3093,14 @@ def get_cDi_turbwall(U, param: Param):
     #   cDi, cDi_U : dissipation function and its linearization w.r.t. U (1x4)
     # DETAILS
     #   This is one contribution to the dissipation function cDi = 2*cD/H*
-
-    if param.wake:
-        return 0, np.zeros(4)
-
+    if (wake):
+        return 0, np.zeros(4)  # for pinging
+    turb = True
     # get cf, Hk, Hs, Us
-    cf, cf_U = get_cf(U, param)
+    cf, cf_U = get_cf(U, param, turb, wake)
     Hk, Hk_U = get_Hk(U, param)
-    Hs, Hs_U = get_Hs(U, param)
-    Us, Us_U = get_Us(U, param)
+    Hs, Hs_U = get_Hs(U, param, turb, wake)
+    Us, Us_U = get_Us(U, param, turb, wake)
     Ret, Ret_U = get_Ret(U, param)
 
     lr = np.log(Ret)
@@ -3197,7 +3147,7 @@ def get_cDi_lam(U, param: Param):
 
 
 # -------------------------------------------------------------------------------
-def get_cDi_lamwake(U, paramin: Param):
+def get_cDi_lamwake(U, param: Param):
     # laminar wake dissipation function cDi
     # INPUT
     #   U     : state vector [th; ds; sa; ue]
@@ -3207,12 +3157,12 @@ def get_cDi_lamwake(U, paramin: Param):
     # DETAILS
     #   This is one contribution to the dissipation function cDi = 2*cD/H*
 
-    param = copy.deepcopy(paramin)
-    param.turb = False  # force laminar
+    turb = False  # force laminar
+    wake = True
 
     # dependencies
     Hk, Hk_U = get_Hk(U, param)
-    Hs, Hs_U = get_Hs(U, param)
+    Hs, Hs_U = get_Hs(U, param, turb, wake)
     Ret, Ret_U = get_Ret(U, param)
     HsRet = Hs * Ret
     HsRet_U = Hs_U * Ret + Hs * Ret_U
@@ -3226,7 +3176,7 @@ def get_cDi_lamwake(U, paramin: Param):
 
 
 # -------------------------------------------------------------------------------
-def get_cDi_outer(U, param: Param):
+def get_cDi_outer(U, param: Param, turb: bool, wake: bool):
     # turbulent outer layer contribution to dissipation function cDi
     # INPUT
     #   U     : state vector [th; ds; sa; ue]
@@ -3235,13 +3185,12 @@ def get_cDi_outer(U, param: Param):
     #   cDi, cDi_U : dissipation function and its linearization w.r.t. U (1x4)
     # DETAILS
     #   This is one contribution to the dissipation function cDi = 2*cD/H*
-
-    if not param.turb:
+    if not turb:
         return 0, np.zeros(4)  # for pinging
 
     # first get Hs, Us
-    [Hs, Hs_U] = get_Hs(U, param)
-    [Us, Us_U] = get_Us(U, param)
+    [Hs, Hs_U] = get_Hs(U, param, turb, wake)
+    [Us, Us_U] = get_Us(U, param, turb, wake)
 
     # shear stress: note, state stores ct^.5
     ct = U[2] ** 2
@@ -3254,7 +3203,7 @@ def get_cDi_outer(U, param: Param):
 
 
 # -------------------------------------------------------------------------------
-def get_cDi_lamstress(U, param: Param):
+def get_cDi_lamstress(U, param: Param, turb: bool, wake: bool):
     # laminar stress contribution to dissipation function cDi
     # INPUT
     #   U     : state vector [th; ds; sa; ue]
@@ -3265,8 +3214,8 @@ def get_cDi_lamstress(U, param: Param):
     #   This is one contribution to the dissipation function cDi = 2*cD/H*
 
     # first get Hs, Us, and Ret
-    Hs, Hs_U = get_Hs(U, param)
-    Us, Us_U = get_Us(U, param)
+    Hs, Hs_U = get_Hs(U, param, turb, wake)
+    Us, Us_U = get_Us(U, param, turb, wake)
     Ret, Ret_U = get_Ret(U, param)
     HsRet = Hs * Ret
     HsRet_U = Hs_U * Ret + Hs * Ret_U
@@ -3280,7 +3229,7 @@ def get_cDi_lamstress(U, param: Param):
 
 
 # -------------------------------------------------------------------------------
-def get_Us(U, param: Param):
+def get_Us(U, param: Param, turb: bool, wake: bool):
     # calculates the normalized wall slip velocity Us
     # INPUT
     #   U     : state vector [th; ds; sa; ue]
@@ -3288,14 +3237,14 @@ def get_Us(U, param: Param):
     # OUTPUT
     #   Us, Us_U : normalized wall slip velocity and its linearization w.r.t. U (1x4)
 
-    [Hs, Hs_U] = get_Hs(U, param)
+    [Hs, Hs_U] = get_Hs(U, param, turb, wake)
     [Hk, Hk_U] = get_Hk(U, param)
     [H, H_U] = get_H(U)
 
     # limit Hk (TODO smooth/eliminate)
-    if (param.wake) and (Hk < 1.00005):
+    if (wake) and (Hk < 1.00005):
         Hk, Hk_U = 1.00005, Hk_U * 0
-    if (not param.wake) and (Hk < 1.05):
+    if (not wake) and (Hk < 1.05):
         Hk, Hk_U = 1.05, Hk_U * 0
 
     beta = param.GB
@@ -3303,9 +3252,9 @@ def get_Us(U, param: Param):
     Us = 0.5 * Hs * (1 - bi * (Hk - 1) / H)
     Us_U = 0.5 * Hs_U * (1 - bi * (Hk - 1) / H) + 0.5 * Hs * (-bi * (Hk_U) / H + bi * (Hk - 1) / H**2 * H_U)
     # limits
-    if (not param.wake) and (Us > 0.95):
+    if (not wake) and (Us > 0.95):
         Us, Us_U = 0.98, Us_U * 0
-    if (not param.wake) and (Us > 0.99995):
+    if (not wake) and (Us > 0.99995):
         Us, Us_U = 0.99995, Us_U * 0
 
     return Us, Us_U
@@ -3441,15 +3390,15 @@ def ping_test(M: Mfoil):
         get_Hss,
         residual_station,
     ]
-
+    param = M.param
     # ping tests
     sturb = ["lam", "turb", "wake"]
     for iRe in range(len(Rev)):  # loop over Reynolds numbers
         M.oper.Re = Rev[iRe]
         init_thermo(M)
-        param = build_param(M, 1)
+        turb, wake, simi = False, False, False
         for it in range(3):  # loop over lam, turb, wake
-            param.turb, param.wake = (it > 0), (it == 2)
+            turb, wake = (it > 0), (it == 2)
             for ih in range(len(fv)):  # loop over functions
                 U, srates, smark, serr, f = Uv[min(it, 1)], "", "", "", fv[ih]
                 if f == residual_station:
@@ -3462,11 +3411,11 @@ def ping_test(M: Mfoil):
                             np.r_[0.002, 0.0018],
                             np.r_[-0.2, 0.3],
                         )
-                        v0, v_U0, v_x0 = f(param, xi, np.stack((U[0:4], U[4:8]), axis=-1), Aux)
+                        v0, v_U0, v_x0 = f(param, xi, np.stack((U[0:4], U[4:8]), axis=-1), Aux, turb, wake, simi)
                         for iep in range(2):  # test with two epsilons
                             U[k] += ep
                             xi += ep * dx
-                            v1, v_U1, v_x1 = f(param, xi, np.stack((U[0:4], U[4:8]), axis=-1), Aux)
+                            v1, v_U1, v_x1 = f(param, xi, np.stack((U[0:4], U[4:8]), axis=-1), Aux, turb, wake, simi)
                             U[k] -= ep
                             xi -= ep * dx
                             E[iep] = norm2((v1 - v0) / ep - 0.5 * (v_U1[:, k] + v_U0[:, k] + np.dot(v_x0 + v_x1, dx)))
@@ -3489,7 +3438,7 @@ def ping_test(M: Mfoil):
                     srates += " " + srate
                     serr += " %.2e->%.2e" % (E[0], E[1])
                 vprint(
-                    param,
+                    param.verb,
                     0,
                     "%-18s %-5s err=[%s]  rates=[%s] %s" % (f.__name__, sturb[it], serr, srates, smark),
                 )
@@ -3497,7 +3446,7 @@ def ping_test(M: Mfoil):
     # transition residual ping
     M.oper.Re = 2e6
     init_thermo(M)
-    param = build_param(M, 1)
+    turb, wake, simi = False, False, False
     U, x, Aux = (
         np.transpose(np.array([[0.01, 0.02, 8.95, 0.9], [0.013, 0.023, 0.028, 0.85]])),
         np.r_[0.7, 0.8],
@@ -3505,7 +3454,7 @@ def ping_test(M: Mfoil):
     )
     dU, dx, ep, v, v_u = np.random.rand(4, 2), np.random.rand(2), 1e-4, [], []
     for ie in range(3):
-        R, R_U, R_x = residual_transition(M, param, x, U, Aux)
+        R, R_U, R_x = residual_transition(M, param, x, U, Aux, wake, simi)
         v.append(R)
         v_u.append(np.dot(R_U, np.reshape(dU, 8, order="F")) + np.dot(R_x, dx))
         U += ep * dU
@@ -3516,7 +3465,6 @@ def ping_test(M: Mfoil):
     M.oper.Re = 1e6
     M.oper.alpha = 1
     init_thermo(M)
-    param = build_param(M, 1)
     U, x, Aux = (
         np.array([0.00004673616, 0.000104289, 0, 0.11977917547]),
         4.590816441485401e-05,
@@ -3524,9 +3472,9 @@ def ping_test(M: Mfoil):
     )
     dU, dx, ep, v, v_u = np.random.rand(4), np.random.rand(1), 1e-6, [], []
     for ie in range(3):
-        param.simi = True
-        R, R_U, R_x = residual_station(param, np.r_[x, x], np.stack((U, U), axis=-1), Aux)
-        param.simi = False
+        simi = True
+        R, R_U, R_x = residual_station(param, np.r_[x, x], np.stack((U, U), axis=-1), Aux, wake, simi)
+        simi = False
         v.append(R)
         v_u.append(np.dot(R_U[:, range(0, 4)] + R_U[:, range(4, 8)], dU) + (R_x[:, 0] + R_x[:, 1]) * dx[0])
         U += ep * dU
@@ -3569,7 +3517,6 @@ def ping_test(M: Mfoil):
     # stagnation state ping
     M.oper.Re = 5e5
     init_thermo(M)
-    param = build_param(M, 1)
     (
         U,
         x,
