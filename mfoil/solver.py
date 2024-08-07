@@ -5,23 +5,23 @@ from scipy import sparse
 from mfoil.panel import (
     panel_linvortex_stream,
     panel_constsource_stream,
-    TE_info,
     panel_linsource_stream,
     panel_constsource_velocity,
     panel_linvortex_velocity,
-    panel_linsource_velocity,
+    panel_linsource_velocity
 )
 from mfoil.utils import vprint, sind, cosd, norm2
 from mfoil.geometry import (
     Geom,
     Panel,
+    TE_info,
     naca_points,
     set_coords,
     make_panels,
     mgeom_flap,
     mgeom_addcamber,
     mgeom_derotate,
-    space_geom,
+    space_geom
 )
 
 

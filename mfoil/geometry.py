@@ -1,6 +1,6 @@
 import numpy as np
 from scipy.interpolate import CubicSpline, interp1d
-from mfoil.utils import cosd, sind, atan2, norm2
+from mfoil.utils import cosd, sind, atan2, norm2, dist
 
 
 class Geom:  # geometry
@@ -22,7 +22,6 @@ class Panel:  # paneling
         self.t = []  # dx/ds, dy/ds tangents at nodes
 
 
-# -------------------------------------------------------------------------------
 def make_panels(geom: Geom, npanel: int, stgt=None) -> Panel:
     # places panels on the current airfoil, as described by geom.xpoint
     # INPUT
@@ -44,10 +43,73 @@ def make_panels(geom: Geom, npanel: int, stgt=None) -> Panel:
     return foil
 
 
+def TE_info(X):
+    # returns trailing-edge information for an airfoil with node coords X
+    # INPUT
+    #   X : node coordinates, ordered clockwise (2xN)
+    # OUTPUT
+    #   t    : bisector vector = average of upper/lower tangents, normalized
+    #   hTE  : trailing edge gap, measured as a cross-section
+    #   dtdx : thickness slope = d(thickness)/d(wake x)
+    #   tcp  : |t cross p|, used for setting TE source panel strength
+    #   tdp  : t dot p, used for setting TE vortex panel strength
+    # DETAILS
+    #   p refers to the unit vector along the TE panel (from lower to upper)
+
+    t1 = X[:, 0] - X[:, 1]
+    t1 = t1 / norm2(t1)  # lower tangent vector
+    t2 = X[:, -1] - X[:, -2]
+    t2 = t2 / norm2(t2)  # upper tangent vector
+    t = 0.5 * (t1 + t2)
+    t = t / norm2(t)  # average tangent; gap bisector
+    s = X[:, -1] - X[:, 0]  # lower to upper connector vector
+    hTE = -s[0] * t[1] + s[1] * t[0]  # TE gap
+    dtdx = t1[0] * t2[1] - t2[0] * t1[1]  # sin(theta between t1,t2) approx dt/dx
+    p = s / norm2(s)  # unit vector along TE panel
+    tcp = abs(t[0] * p[1] - t[1] * p[0])
+    tdp = np.dot(t, p)
+
+    return t, hTE, dtdx, tcp, tdp
+
+
+def panel_info(Xj, xi):
+    # calculates common panel properties (distance, angles)
+    # INPUTS
+    #   Xj    : X(:,[1,2]) = panel endpoint coordinates
+    #   xi    : control point coordinates (2x1)
+    #   vdir  : direction of dot product, or None
+    #   onmid : true means xi is on the panel midpoint
+    # OUTPUTS
+    #   t, n   : panel-aligned tangent and normal vectors
+    #   x, z   : control point coords in panel-aligned coord system
+    #   d      : panel length
+    #   r1, r2 : distances from panel left/right edges to control point
+    #   theta1, theta2 : left/right angles
+
+    # panel coordinates
+    xj1, zj1 = Xj[0, 0], Xj[1, 0]
+    xj2, zj2 = Xj[0, 1], Xj[1, 1]
+
+    # panel-aligned tangent and normal vectors
+    t = np.array([xj2 - xj1, zj2 - zj1])
+    t /= norm2(t)
+    n = np.array([-t[1], t[0]])
+
+    # control point relative to (xj1,zj1)
+    xz = np.array([(xi[0] - xj1), (xi[1] - zj1)])
+    x = np.dot(xz, t)  # in panel-aligned coord system
+    z = np.dot(xz, n)  # in panel-aligned coord system
+
+    # distances and angles
+    d = dist(xj2 - xj1, zj2 - zj1)  # panel length
+    r1 = dist(x, z)  # left edge to control point
+    r2 = dist(x - d, z)  # right edge to control point
+    theta1 = atan2(z, x)  # left angle
+    theta2 = atan2(z, x - d)  # right angle
+
+    return t, n, x, z, d, r1, r2, theta1, theta2
+
 # ============ GEOMETRY ==============
-
-
-# -------------------------------------------------------------------------------
 def mgeom_flap(geom: Geom, npanel: int, xzhinge, eta) -> Panel:
     # deploys a flap at hinge location xzhinge, with flap angle eta
     # INPUTS
@@ -81,7 +143,6 @@ def mgeom_flap(geom: Geom, npanel: int, xzhinge, eta) -> Panel:
     return make_panels(geom, npanel)
 
 
-# -------------------------------------------------------------------------------
 def mgeom_addcamber(geom: Geom, npanel: int, xzcamb) -> Panel:
     # adds camber to airfoil from given coordinates
     # INPUTS
@@ -107,7 +168,6 @@ def mgeom_addcamber(geom: Geom, npanel: int, xzcamb) -> Panel:
     return make_panels(geom, npanel)
 
 
-# -------------------------------------------------------------------------------
 def mgeom_derotate(geom: Geom, npanel: int) -> Panel:
     # derotates airfoil about leading edge to make chordline horizontal
     # INPUTS
@@ -134,7 +194,6 @@ def mgeom_derotate(geom: Geom, npanel: int) -> Panel:
     return make_panels(geom, npanel)
 
 
-# -------------------------------------------------------------------------------
 def space_geom(dx0, L, Np):
     # spaces Np points geometrically from [0,L], with dx0 as first interval
     # INPUTS
@@ -166,7 +225,6 @@ def space_geom(dx0, L, Np):
     return np.r_[0, np.cumsum(dx0 * r ** (np.array(range(N))))]
 
 
-# -------------------------------------------------------------------------------
 def set_coords(geom: Geom, X):
     # sets geometry from coordinate matrix
     # INPUTS
@@ -197,7 +255,6 @@ def set_coords(geom: Geom, X):
     geom.chord = max(X[0, :]) - min(X[0, :])
 
 
-# -------------------------------------------------------------------------------
 def naca_points(digits: str) -> Geom:
     # calculates coordinates of a NACA 4-digit airfoil, stores in M.geom
     # INPUTS
@@ -255,7 +312,6 @@ def naca_points(digits: str) -> Geom:
     return geom
 
 
-# -------------------------------------------------------------------------------
 def spline_curvature(Xin, N, Ufac, TEfac, stgt):
     # Splines 2D points in Xin and samples using curvature-based spacing
     # INPUT
@@ -316,7 +372,6 @@ def spline_curvature(Xin, N, Ufac, TEfac, stgt):
     return X, S, XS
 
 
-# -------------------------------------------------------------------------------
 def spline2d(X):
     # splines 2d points
     # INPUT
@@ -355,7 +410,6 @@ def spline2d(X):
     return {"X": PPX, "Y": PPY}
 
 
-# -------------------------------------------------------------------------------
 def splineval(PP, S):
     # evaluates 2d spline at given S values
     # INPUT
@@ -367,7 +421,6 @@ def splineval(PP, S):
     return np.vstack((PP["X"](S), PP["Y"](S)))
 
 
-# -------------------------------------------------------------------------------
 def splinetan(PP, S):
     # evaluates 2d spline tangent (not normalized) at given S values
     # INPUT
@@ -381,7 +434,6 @@ def splinetan(PP, S):
     return np.vstack((DPX(S), DPY(S)))
 
 
-# -------------------------------------------------------------------------------
 def quadseg():
     # Returns quadrature points and weights for a [0,1] line segment
     # INPUT
