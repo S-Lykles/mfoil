@@ -2,7 +2,7 @@ import numpy as np
 from numpy.typing import NDArray
 from typing import List
 from scipy import sparse
-from mfoil.panel import (
+from mfoil.inviscid import (
     panel_linvortex_stream,
     panel_constsource_stream,
     panel_linsource_stream,
