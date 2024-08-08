@@ -8,7 +8,7 @@ class Geom:  # geometry
         self.chord = 1.0  # chord length
         self.wakelen = 1.0  # wake extent length, in chords
         self.npoint = 1  # number of geometry representation points
-        self.name = "noname"  # airfoil name, e.g. NACA XXXX
+        self.name = 'noname'  # airfoil name, e.g. NACA XXXX
         self.xpoint = []  # point coordinates, [2 x npoint]
         self.xref = np.array([0.25, 0])  # moment reference point
 
@@ -72,7 +72,6 @@ def TE_info(X):
     return t, hTE, dtdx, tcp, tdp
 
 
-
 # ============ GEOMETRY ==============
 def mgeom_flap(geom: Geom, npanel: int, xzhinge, eta) -> Panel:
     # deploys a flap at hinge location xzhinge, with flap angle eta
@@ -121,7 +120,7 @@ def mgeom_addcamber(geom: Geom, npanel: int, xzcamb) -> Panel:
     X = geom.xpoint  # airfoil points
 
     # interpolate camber delta, add to X
-    dz = interp1d(xzcamb[0, :], xzcamb[1, :], "cubic")(X[0, :])
+    dz = interp1d(xzcamb[0, :], xzcamb[1, :], 'cubic')(X[0, :])
     X[1, :] += dz
 
     # store back in M.geom
@@ -167,7 +166,7 @@ def space_geom(dx0, L, Np):
     # OUTPUTS
     #   x   : point locations (1xN)
 
-    assert Np > 1, "Need at least two points for spacing."
+    assert Np > 1, 'Need at least two points for spacing.'
     N = Np - 1  # number of intervals
     # L = dx0 * (1 + r + r^2 + ... r^{N-1}) = dx0*(r^N-1)/(r-1)
     # let d = L/dx0, and for a guess, consider r = 1 + s
@@ -231,7 +230,7 @@ def naca_points(digits: str) -> Geom:
     # DETAILS
     #   Uses analytical camber/thickness formulas
     geom = Geom()
-    geom.name = "NACA " + digits
+    geom.name = 'NACA ' + digits
     N, te = 100, 1.5  # points per side and trailing-edge bunching factor
     f = np.linspace(0, 1, N + 1)  # linearly-spaced points between 0 and 1
     x = 1 - (te + 1) * f * (1 - f) ** te - (1 - f) ** (te + 1)  # bunched points, x, 0 to 1
@@ -251,8 +250,8 @@ def naca_points(digits: str) -> Geom:
     elif len(digits) == 5:
         # 5-digit series
         n = float(digits[1])
-        valid = digits[0] == "2" and digits[2] == "0" and n > 0 and n < 6
-        assert valid, "5-digit NACA must begin with 2X0, X in 1-5"
+        valid = digits[0] == '2' and digits[2] == '0' and n > 0 and n < 6
+        assert valid, '5-digit NACA must begin with 2X0, X in 1-5'
         mv = [0.058, 0.126, 0.2025, 0.29, 0.391]
         m = mv(n)
         cv = [361.4, 51.64, 15.957, 6.643, 3.23]
@@ -262,7 +261,7 @@ def naca_points(digits: str) -> Geom:
             if x[i] > m:
                 c[i] = (cc / 6.0) * m**3 * (1 - x(i))
     else:
-        raise ValueError("Provide 4 or 5 NACA digits")
+        raise ValueError('Provide 4 or 5 NACA digits')
 
     zu = c + t
     zl = c - t  # upper and lower surfaces
@@ -297,20 +296,20 @@ def spline_curvature(Xin, N, Ufac, TEfac, stgt):
 
     # curvature-based spacing on geom
     nfine = 501
-    s = np.linspace(0, PP["X"].x[-1], nfine)
+    s = np.linspace(0, PP['X'].x[-1], nfine)
     xyfine = splineval(PP, s)
     PPfine = spline2d(xyfine)
 
     if stgt is None:
-        s = PPfine["X"].x
+        s = PPfine['X'].x
         sk = np.zeros(nfine)
         xq, wq = quadseg()
         for i in range(nfine - 1):
             ds = s[i + 1] - s[i]
             st = xq * ds
-            px = PPfine["X"].c[:, i]
+            px = PPfine['X'].c[:, i]
             xss = 6.0 * px[0] * st + 2.0 * px[1]
-            py = PPfine["Y"].c[:, i]
+            py = PPfine['Y'].c[:, i]
             yss = 6.0 * py[0] * st + 2.0 * py[1]
             skint = 0.01 * Ufac + 0.5 * np.dot(wq, np.sqrt(xss * xss + yss * yss)) * ds
 
@@ -326,7 +325,7 @@ def spline_curvature(Xin, N, Ufac, TEfac, stgt):
 
         # arclength values at points
         skl = np.linspace(min(sk), max(sk), N)
-        s = interp1d(sk, s, "cubic")(skl)
+        s = interp1d(sk, s, 'cubic')(skl)
     else:
         s = stgt
 
@@ -371,7 +370,7 @@ def spline2d(X):
         PPX = CubicSpline(S, X[0, :])
         PPY = CubicSpline(S, X[1, :])
 
-    return {"X": PPX, "Y": PPY}
+    return {'X': PPX, 'Y': PPY}
 
 
 def splineval(PP, S):
@@ -382,7 +381,7 @@ def splineval(PP, S):
     # OUTPUT
     #   XY : coordinates on spline at the requested s values (2xN)
 
-    return np.vstack((PP["X"](S), PP["Y"](S)))
+    return np.vstack((PP['X'](S), PP['Y'](S)))
 
 
 def splinetan(PP, S):
@@ -393,8 +392,8 @@ def splinetan(PP, S):
     # OUTPUT
     #   XYS : dX/dS and dY/dS values at each point (2xN)
 
-    DPX = PP["X"].derivative()
-    DPY = PP["Y"].derivative()
+    DPX = PP['X'].derivative()
+    DPY = PP['Y'].derivative()
     return np.vstack((DPX(S), DPY(S)))
 
 

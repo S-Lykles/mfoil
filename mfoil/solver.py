@@ -1,26 +1,9 @@
 import numpy as np
 from numpy.typing import NDArray
 from scipy import sparse
-from mfoil.inviscid import (
-    Isol,
-    rebuild_ue_m,
-    calc_ue_m,
-    build_wake,
-    build_gamma
-)
+from mfoil.inviscid import Isol, rebuild_ue_m, calc_ue_m, build_wake, build_gamma
 from mfoil.utils import vprint, sind, cosd, norm2
-from mfoil.geometry import (
-    Geom,
-    Panel,
-    TE_info,
-    naca_points,
-    set_coords,
-    make_panels,
-    mgeom_flap,
-    mgeom_addcamber,
-    mgeom_derotate,
-    space_geom
-)
+from mfoil.geometry import Geom, Panel, TE_info, naca_points, set_coords, make_panels, mgeom_flap, mgeom_addcamber, mgeom_derotate
 
 
 class Oper:  # operating conditions and flags
@@ -124,8 +107,8 @@ class Param:  # parameters
 
 
 class Mfoil:
-    def __init__(self, coords=None, naca="0012", npanel=199):
-        self.version = "2022-02-22"  # version
+    def __init__(self, coords=None, naca='0012', npanel=199):
+        self.version = '2022-02-22'  # version
         self.geom = Geom()  # geometry
         self.foil = Panel()  # airfoil panels
         self.wake = Panel()  # wake panels
@@ -281,7 +264,7 @@ def calc_force(M: Mfoil):
     M.post.cd, M.post.cdf, M.post.cdp = cd, cdf, cd - cdf
 
     # print out current values
-    s = f"  alpha={M.oper.alpha:.2f}deg, cl={M.post.cl:.6f}, cm={M.post.cm:.6f}, cdpi={M.post.cdpi:.6f}, cd={M.post.cd:.6f}, cdf={M.post.cdf:.6f}, cdp={M.post.cdp:.6f}"
+    s = f'  alpha={M.oper.alpha:.2f}deg, cl={M.post.cl:.6f}, cm={M.post.cm:.6f}, cdpi={M.post.cdpi:.6f}, cd={M.post.cd:.6f}, cdf={M.post.cdf:.6f}, cdp={M.post.cdp:.6f}'
     vprint(M.param.verb, 1, s)
 
 
@@ -300,7 +283,7 @@ def get_distributions(M: Mfoil):
     - Relevant for viscous solutions
     """
 
-    assert M.glob.U is not None, "no global solution"
+    assert M.glob.U is not None, 'no global solution'
 
     # quantities already in the global state
     M.post.th = M.glob.U[0, :].copy()  # theta
@@ -370,7 +353,7 @@ def solve_inviscid(M: Mfoil):
     - Also initializes thermo variables for normalization
     """
 
-    assert M.foil.N > 0, "No panels"
+    assert M.foil.N > 0, 'No panels'
     init_thermo(M)
     M.isol = build_gamma(M.foil, M.param, M.oper.alpha, M.geom.chord)
     M.glob.conv = True  # no coupled system ... convergence is guaranteed
@@ -397,7 +380,7 @@ def get_ueinv(M: Mfoil):
     - The tangential velocity is measured + in the streamwise direction
     """
 
-    assert len(M.isol.gam) > 0, "No inviscid solution"
+    assert len(M.isol.gam) > 0, 'No inviscid solution'
     alpha = M.oper.alpha
     cs = np.array([cosd(alpha), sind(alpha)])
     uea = M.isol.sign_ue * np.dot(M.isol.gamref, cs)  # airfoil
@@ -430,7 +413,7 @@ def get_ueinvref(M: Mfoil) -> NDArray[np.float64]:
     - Uses `uewiref` for the wake (if exists) to compute wake contributions
     """
 
-    assert len(M.isol.gam) > 0, "No inviscid solution"
+    assert len(M.isol.gam) > 0, 'No inviscid solution'
     uearef = M.isol.sign_ue[:, np.newaxis] * M.isol.gamref
     if (M.oper.viscous) and (M.wake.N > 0):
         uewref = M.isol.uewiref  # wake
@@ -505,6 +488,7 @@ def set_wake_gap(M: Mfoil):
             wgap[i] = hTE * (1 + (2 + flen * dtdx) * xib) * (1 - xib) ** 2
     M.vsol.wgap = wgap
 
+
 def stagpoint_find(isol: Isol, foil: Panel, wake: Panel):
     # finds the LE stagnation point on the airfoil (using inviscid solution)
     # INPUTS
@@ -516,14 +500,14 @@ def stagpoint_find(isol: Isol, foil: Panel, wake: Panel):
     #   M.isol.sgnue   : sign conversion from CW to tangential velocity (1xN)
     #   M.isol.xi      : distance from stagnation point at each node (1xN)
 
-    assert len(isol.gam) > 0, "No inviscid solution"
+    assert len(isol.gam) > 0, 'No inviscid solution'
     N = foil.N  # number of points on the airfoil
     j = 0
     for j in range(N):
         if isol.gam[j] > 0:
             break
     else:
-        assert False, "no stagnation point"
+        assert False, 'no stagnation point'
     idx = [j - 1, j]
     G = isol.gam[idx]
     S = foil.s[idx]
@@ -555,22 +539,22 @@ def stagpoint_move(M: Mfoil):
     newpanel = True  # are we moving to a new panel?
     if ue[idx[1]] < 0:
         # move stagnation point up (larger s, new panel)
-        vprint(M.param.verb, 2, "  Moving stagnation point up")
+        vprint(M.param.verb, 2, '  Moving stagnation point up')
         for j in range(idx[1], N):
             if ue[j] > 0:
                 break
-        assert j < N, "no stagnation point"
+        assert j < N, 'no stagnation point'
         I1 = j
         for j in range(idx[1], I1):
             ue[j] *= -1.0
         idx[0], idx[1] = I1 - 1, I1  # new panel
     elif ue[idx[0]] < 0:
         # move stagnation point down (smaller s, new panel)
-        vprint(M.param.verb, 2, "  Moving stagnation point down")
+        vprint(M.param.verb, 2, '  Moving stagnation point down')
         for j in range(idx[0], -1, -1):
             if ue[j] > 0:
                 break
-        assert j > 0, "no stagnation point"
+        assert j > 0, 'no stagnation point'
         I0 = j
         for j in range(I0 + 1, idx[0] + 1):
             ue[j] *= -1.0
@@ -580,25 +564,21 @@ def stagpoint_move(M: Mfoil):
 
     # move point along panel
     ues, S = ue[idx], M.foil.s[idx]
-    assert (ues[0] > 0) and (ues[1] > 0), "stagpoint_move: velocity error"
+    assert (ues[0] > 0) and (ues[1] > 0), 'stagpoint_move: velocity error'
     den = ues[0] + ues[1]
     w1 = ues[1] / den
     w2 = ues[0] / den
     M.isol.sstag = w1 * S[0] + w2 * S[1]  # s location
     M.isol.xstag = np.dot(M.foil.x[:, idx], np.r_[w1, w2])  # x location
     M.isol.sstag_ue = np.r_[ues[1], -ues[0]] * (S[1] - S[0]) / (den * den)
-    vprint(
-        M.param.verb,
-        2,
-        "  Moving stagnation point: s=%.15e -> s=%.15e" % (sstag0, M.isol.sstag),
-    )
+    vprint(M.param.verb, 2, f'Moving stagnation point: s={sstag0:.15e} -> s={M.isol.sstag:.15e}')
 
     # set new xi coordinates for every point
     M.isol.xi = np.concatenate((abs(M.foil.s - M.isol.sstag), M.wake.s - M.isol.sstag))
 
     # matrices need to be recalculated if on a new panel
     if newpanel:
-        vprint(M.param.verb, 2, "  New stagnation panel = %d %d" % (idx[0], idx[1]))
+        vprint(M.param.verb, 2, f'  New stagnation panel = {idx[0]} {idx[1]}')
         M.isol.stag_idx = idx  # new panel indices
         for i in range(idx[0] + 1):
             M.isol.sign_ue[i] = -1
@@ -656,45 +636,45 @@ def solve_coupled(M: Mfoil):
     nNewton = M.param.niglob  # number of iterations
     M.glob.conv = False
     M.glob.realloc = True  # reallocate Jacobian on first iter
-    vprint(M.param.verb, 1, "\n <<< Beginning coupled solver iterations >>>")
+    vprint(M.param.verb, 1, '\n <<< Beginning coupled solver iterations >>>')
 
     for iNewton in range(nNewton):
         # set up the global system
-        vprint(M.param.verb, 2, "Building global system")
+        vprint(M.param.verb, 2, 'Building global system')
         build_glob_sys(M)
 
         # compute forces if in cl target mode
         if M.oper.givencl:
-            vprint(M.param.verb, 2, "Calculating force")
+            vprint(M.param.verb, 2, 'Calculating force')
             calc_force(M)
 
         # convergence check
         Rnorm = norm2(M.glob.R)
-        vprint(M.param.verb, 1, "\nNewton iteration %d, Rnorm = %.10e" % (iNewton, Rnorm))
+        vprint(M.param.verb, 1, f'\nNewton iteration {iNewton}, Rnorm = {Rnorm:.10e}')
         if Rnorm < M.param.rtol:
             M.glob.conv = True
             break
 
         # solve global system
-        vprint(M.param.verb, 2, "Solving global system")
+        vprint(M.param.verb, 2, 'Solving global system')
         dU, dalpha = solve_glob(M)
 
         # update the state
-        vprint(M.param.verb, 2, "Updating the state")
+        vprint(M.param.verb, 2, 'Updating the state')
         update_state(M, dU, dalpha)
 
         M.glob.realloc = False  # assume Jacobian will not get reallocated
 
         # update stagnation point; Newton still OK; had R_x effects in R_U
-        vprint(M.param.verb, 2, "Moving stagnation point")
+        vprint(M.param.verb, 2, 'Moving stagnation point')
         stagpoint_move(M)
 
         # update transition
-        vprint(M.param.verb, 2, "Updating transition")
+        vprint(M.param.verb, 2, 'Updating transition')
         update_transition(M)
 
     if not M.glob.conv:
-        vprint(M.param.verb, 1, "\n** Global Newton NOT CONVERGED **\n")
+        vprint(M.param.verb, 1, '\n** Global Newton NOT CONVERGED **\n')
 
 
 def update_state(M: Mfoil, dU, dalpha: float):
@@ -709,9 +689,9 @@ def update_state(M: Mfoil, dU, dalpha: float):
     #   Calculates omega to prevent big changes in the state or negative values
 
     if any(np.iscomplex(M.glob.U[2, :])):
-        raise ValueError("imaginary amp in U")
+        raise ValueError('imaginary amp in U')
     if any(np.iscomplex(dU[2, :])):
-        raise ValueError("imaginary amp in dU")
+        raise ValueError('imaginary amp in dU')
 
     # max ctau
     It = np.nonzero(M.vsol.turb)[0]
@@ -729,7 +709,7 @@ def update_state(M: Mfoil, dU, dalpha: float):
         om = abs(0.5 / fmin) if (fmin < -0.5) else 1.0
         if om < omega:
             omega = om
-            vprint(M.param.verb, 3, "  th/ds decrease: omega = %.5f" % (omega))
+            vprint(M.param.verb, 3, f'  th/ds decrease: omega = {omega:.5f}')
 
     # limit negative amp/ctau
     Uk = M.glob.U[2, :]
@@ -745,17 +725,17 @@ def update_state(M: Mfoil, dU, dalpha: float):
             om = 0.8 * abs(Uk[i] / dUk[i])
             if om < omega:
                 omega = om
-                vprint(M.param.verb, 3, "  neg sa: omega = %.5f" % (omega))
+                vprint(M.param.verb, 3, f'  neg sa: omega = {omega:.5f}')
 
     # prevent big changes in amp
     idx = np.nonzero(M.vsol.turb)[0]
     if any(np.iscomplex(Uk[idx])):
-        raise ValueError("imaginary amplification")
+        raise ValueError('imaginary amplification')
     dumax = max(abs(dUk[idx]))
     om = abs(2.0 / dumax) if (dumax > 0) else 1.0
     if om < omega:
         omega = om
-        vprint(M.param.verb, 3, "  amp: omega = %.5f" % (omega))
+        vprint(M.param.verb, 3, f'  amp: omega = {omega:.5f}')
 
     # prevent big changes in ctau
     idx = np.nonzero(M.vsol.turb)[0]
@@ -763,7 +743,7 @@ def update_state(M: Mfoil, dU, dalpha: float):
     om = abs(0.05 / dumax) if (dumax > 0) else 1.0
     if om < omega:
         omega = om
-        vprint(M.param.verb, 3, "  ctau: omega = %.5f" % (omega))
+        vprint(M.param.verb, 3, f'  ctau: omega = {omega:.5f}')
 
     # prevent large ue changes
     dUk = dU[3, :]
@@ -771,14 +751,14 @@ def update_state(M: Mfoil, dU, dalpha: float):
     om = 0.2 / fmax if (fmax > 0) else 1.0
     if om < omega:
         omega = om
-        vprint(M.param.verb, 3, "  ue: omega = %.5f" % (omega))
+        vprint(M.param.verb, 3, f'  ue: omega = {omega:.5f}')
 
     # prevent large alpha changes
     if abs(dalpha) > 2:
         omega = min(omega, abs(2 / dalpha))
 
     # take the update
-    vprint(M.param.verb, 2, "  state update: under-relaxation = %.5f" % (omega))
+    vprint(M.param.verb, 2, f'  state update: under-relaxation = {omega:.5f}')
     M.glob.U += omega * dU
     M.oper.alpha += omega * dalpha
 
@@ -800,10 +780,10 @@ def update_state(M: Mfoil, dU, dalpha: float):
             M.glob.U[2, i] = 0.1 * ctmax
 
     def rebuild_isol(M: Mfoil):
-        '''rebuilds inviscid solution, after an angle of attack change'''
+        """rebuilds inviscid solution, after an angle of attack change"""
 
-        assert len(M.isol.gam) > 0, "No inviscid solution"
-        vprint(M.param.verb, 2, "\n  Rebuilding the inviscid solution.")
+        assert len(M.isol.gam) > 0, 'No inviscid solution'
+        vprint(M.param.verb, 2, '\n  Rebuilding the inviscid solution.')
         alpha = M.oper.alpha
         M.isol.gam = M.isol.gamref[:, 0] * cosd(alpha) + M.isol.gamref[:, 1] * sind(alpha)
         if not M.oper.viscous:
@@ -881,7 +861,7 @@ def solve_glob(M: Mfoil):
     dV = -sparse.linalg.spsolve(M.glob.R_V, R)
 
     # store dU, reshaped, in M
-    dU = np.reshape(dV[0 : 4 * Nsys], (4, Nsys), order="F")
+    dU = np.reshape(dV[0 : 4 * Nsys], (4, Nsys), order='F')
     if docl:
         return dU, dV[-1]
     else:
@@ -984,7 +964,7 @@ def build_glob_sys(M: Mfoil):
 
             if i0 == 1:
                 # i0=0 point landed right on stagnation: set value to Ust
-                vprint(M.param.verb, 2, "hit stagnation!")
+                vprint(M.param.verb, 2, 'hit stagnation!')
                 Ig = slice(3 * Is[0], 3 * Is[0] + 3)
                 M.glob.R[Ig] = U[0:3, 0] - Ust[0:3]
                 M.glob.R_U[Ig, 4 * Is[0] : (4 * Is[0] + 4)] += np.eye(3, 4)
@@ -997,7 +977,10 @@ def build_glob_sys(M: Mfoil):
             R1, R1_U, J = wake_sys(M, M.param)
             R1_x = []  # no xi dependence of first wake residual
             # force turbulent in wake if still laminar
-            turb, wake = True, True,
+            turb, wake = (
+                True,
+                True,
+            )
 
         # store first point system in global residual, Jacobian
         Ig = slice(3 * Is[i0], 3 * Is[i0] + 3)
@@ -1202,17 +1185,17 @@ def init_boundary_layer(M: Mfoil):
 
     # do we need to initialize?
     if (not M.oper.initbl) and (M.glob.U.shape[1] == M.glob.Nsys):
-        vprint(M.param.verb, 1, "\n <<< Starting with current boundary layer >>> \n")
+        vprint(M.param.verb, 1, '\n <<< Starting with current boundary layer >>> \n')
         M.glob.U[3, :] = ueinv  # do set a new edge velocity
         return
 
-    vprint(M.param.verb, 1, "\n <<< Initializing the boundary layer >>> \n")
+    vprint(M.param.verb, 1, '\n <<< Initializing the boundary layer >>> \n')
 
     M.glob.U = np.zeros((4, M.glob.Nsys))  # global solution matrix
     M.vsol.turb = np.zeros(M.glob.Nsys, dtype=int)  # node flag: 0 = lam, 1 = turb
 
     for side in range(3):  # loop over surfaces
-        vprint(M.param.verb, 3, "\nSide is = %d:\n" % (side))
+        vprint(M.param.verb, 3, f'\nSide is = {side}:\n')
 
         Is = M.vsol.Is[side]  # surface point indices
         xi = M.isol.xi[Is]  # distance from LE stag point
@@ -1248,7 +1231,15 @@ def init_boundary_layer(M: Mfoil):
             for iNewton in range(nNewton):
                 # call residual at stagnation
                 turb, simi = False, True  # similarity station flag
-                R, R_U, R_x = residual_station(M.param, np.r_[xst, xst], np.stack((Ust, Ust), axis=-1), np.zeros(2), turb=False, wake=False, simi=True)
+                R, R_U, R_x = residual_station(
+                    M.param,
+                    np.r_[xst, xst],
+                    np.stack((Ust, Ust), axis=-1),
+                    np.zeros(2),
+                    turb=False,
+                    wake=False,
+                    simi=True,
+                )
                 simi = False
                 if norm2(R) < 1e-10:
                     break
@@ -1290,26 +1281,18 @@ def init_boundary_layer(M: Mfoil):
             for iNewton in range(nNewton):
                 # call residual at this station
                 if tran:  # we are at transition
-                    vprint(
-                        M.param.verb,
-                        4,
-                        "i=%d, residual_transition (iNewton = %d) \n" % (i, iNewton),
-                    )
+                    vprint(M.param.verb, 4, f'i={i}, residual_transition (iNewton = {iNewton}) \n')
                     try:
                         R, R_U, R_x = residual_transition(M, M.param, xi[Ip], U[:, Ip], Aux[Ip], wake, simi)
                     except ValueError:
-                        vprint(
-                            M.param.verb,
-                            1,
-                            "Transition calculation failed in BL init. Continuing.",
-                        )
+                        vprint(M.param.verb, 1, 'Transition calculation failed in BL init. Continuing.')
                         M.vsol.xt = 0.5 * sum(xi[Ip])
                         U[:, i] = U[:, i - 1]
                         U[3, i] = ue[i]
                         U[2, i] = ct
                         R = 0  # so we move on
                 else:
-                    vprint(M.param.verb, 4, "i=%d, residual_station (iNewton = %d)" % (i, iNewton))
+                    vprint(M.param.verb, 4, f'i={i}, residual_station (iNewton = {iNewton})')
                     R, R_U, R_x = residual_station(M.param, xi[Ip], U[:, Ip], Aux[Ip], turb, wake, simi)
                 if norm2(R) < 1e-10:
                     break
@@ -1353,11 +1336,7 @@ def init_boundary_layer(M: Mfoil):
                 if (direct) and ((Hk > Hmax) or (iNewton > iNswitch)):
                     # no update; need to switch to inverse mode: prescribe Hk
                     direct = False
-                    vprint(
-                        M.param.verb,
-                        2,
-                        "** switching to inverse: i=%d, iNewton=%d" % (i, iNewton),
-                    )
+                    vprint(M.param.verb, 2, f'** switching to inverse: i={i}, iNewton={iNewton}')
                     [Hk, Hk_U] = get_Hk(U[:, i - 1], M.param)
                     Hkr = (xi[i] - xi[i - 1]) / U[0, i - 1]
                     if wake:
@@ -1378,7 +1357,7 @@ def init_boundary_layer(M: Mfoil):
                     U[:, i] = Ui  # take the update
 
             if iNewton >= nNewton - 1:
-                vprint(M.param.verb, 1, "** BL init not converged: si=%d, i=%d **\n" % (side, i))
+                vprint(M.param.verb, 1, f'** BL init not converged: si={side}, i={i} **\n')
                 # extrapolate values
                 U[:, i] = U[:, i - 1]
                 U[3, i] = ue[i]
@@ -1391,11 +1370,7 @@ def init_boundary_layer(M: Mfoil):
 
             # check for transition
             if (not turb) and (not tran) and (U[2, i] > M.param.ncrit):
-                vprint(
-                    M.param.verb,
-                    2,
-                    "Identified transition at (si=%d, i=%d): n=%.5f, ncrit=%.5f\n" % (side, i, U[2, i], M.param.ncrit),
-                )
+                vprint(M.param.verb, 2, f'Identified transition at (si={side}, i={i}): n={U[2, i]:.5f}, ncrit={M.param.ncrit:.5f}\n')
                 tran = True
                 continue  # redo station with transition
 
@@ -1420,18 +1395,14 @@ def store_transition(M: Mfoil, si, i):
     xt = M.vsol.xt
     i0, i1 = M.vsol.Is[si][i - 1], M.vsol.Is[si][i]  # pre/post transition nodes
     xi0, xi1 = M.isol.xi[i0], M.isol.xi[i1]  # xi (s) locations at nodes
-    assert (i0 < M.foil.N) and (i1 < M.foil.N), "Can only store transition on airfoil"
+    assert (i0 < M.foil.N) and (i1 < M.foil.N), 'Can only store transition on airfoil'
     x0, x1 = M.foil.x[0, i0], M.foil.x[0, i1]  # x locations at nodes
     if (xt < xi0) or (xt > xi1):
-        vprint(
-            M.param.verb,
-            1,
-            "Warning: transition (%.3f) off interval (%.3f,%.3f)!" % (xt, xi0, xi1),
-        )
+        vprint(M.param.verb, 1, f'Warning: transition ({xt:.3f}) off interval ({xi0:.3f},{xi1:.3f})!')
     M.vsol.Xt[si, 0] = xt  # xi location
     M.vsol.Xt[si, 1] = x0 + (xt - xi0) / (xi1 - xi0) * (x1 - x0)  # x location
-    slu = ["lower", "upper"]
-    vprint(M.param.verb, 1, "  transition on %s side at x=%.5f" % (slu[si], M.vsol.Xt[si, 1]))
+    slu = ['lower', 'upper']
+    vprint(M.param.verb, 1, f'  transition on {slu[si]} side at x={M.vsol.Xt[si, 1]:.5f}')
 
 
 def update_transition(M: Mfoil):
@@ -1462,7 +1433,7 @@ def update_transition(M: Mfoil):
             M.glob.U[2, Is] = sa[:]  # no change
             continue
 
-        vprint(M.param.verb, 2, "  Update transition: last lam [%d]->[%d]" % (ilam0, ilam))
+        vprint(M.param.verb, 2, f'  Update transition: last lam [{ilam0}]->[{ilam}]')
 
         if ilam < ilam0:
             # transition is now earlier: fill in turb between [ilam+1, ilam0]
@@ -1476,7 +1447,7 @@ def update_transition(M: Mfoil):
                 if (ilam + 1) == ilam0:
                     f = 1
                 M.glob.U[2, Is[i]] = sa0 + f * (sa1 - sa0)
-                assert M.glob.U[2, Is[i]] > 0, "negative ctau in update_transition"
+                assert M.glob.U[2, Is[i]] > 0, 'negative ctau in update_transition'
                 M.vsol.turb[Is[i]] = True
 
         elif ilam > ilam0:
@@ -1518,12 +1489,7 @@ def march_amplification(M: Mfoil, si):
             Ramp = U2[2] - U1[2] - damp * dx
 
             if iNewton > 11:
-                vprint(
-                    param.verb,
-                    3,
-                    "i=%d, iNewton=%d, sa = [%.5e, %.5e], damp = %.5e, Ramp = %.5e"
-                    % (i, iNewton, U1[2], U2[2], damp, Ramp),
-                )
+                vprint(param.verb, 3, f'i={i}, iNewton={iNewton}, sa = [{U1[2]:.5e}, {U2[2]:.5e}], damp = {damp:.5e}, Ramp = {Ramp:.5e}')
 
             if abs(Ramp) < 1e-12:
                 break  # converged
@@ -1536,21 +1502,17 @@ def march_amplification(M: Mfoil, si):
             U2[2] += omega * dU
 
         if iNewton >= nNewton - 1:
-            vprint(param.verb, 1, "march amp Newton unconverged!")
+            vprint(param.verb, 1, 'march amp Newton unconverged!')
 
         # check for transition
         if U2[2] > param.ncrit:
-            vprint(
-                param.verb,
-                2,
-                "  march_amplification (si,i=%d,%d): %.5e is above critical." % (si, i, U2[2]),
-            )
+            vprint(param.verb, 2, f'  march_amplification (si,i={si},{i}): {U2[2]:.5e} is above critical.')
             break
         else:
             M.glob.U[2, Is[i]] = U2[2]  # store amplification in M.glob.U (also seen in view U)
             U[2, i] = U2[2]
             if np.iscomplex(U[2, i]):
-                raise ValueError("imaginary amp during march")
+                raise ValueError('imaginary amp during march')
 
         i += 1  # next station
 
@@ -1590,7 +1552,7 @@ def residual_transition(M: Mfoil, param: Param, x, U, Aux, wake: bool, simi: boo
     xt = x1 + 0.5 * dx  # guess
     ncrit = param.ncrit  # critical amp factor
     nNewton = 20
-    vprint(param.verb, 3, "  Transition interval = [%.5e, %.5e]" % (x1, x2))
+    vprint(param.verb, 3, f'  Transition interval = [{x1:.5e}, {x2:.5e}]')
     #  U1, U2
     for iNewton in range(nNewton):
         w2 = (xt - x1) / dx
@@ -1605,11 +1567,7 @@ def residual_transition(M: Mfoil, param: Param, x, U, Aux, wake: bool, simi: boo
         Rxt = ncrit - sa[0] - 0.5 * (xt - x1) * (damp1 + dampt)
         Rxt_xt = -0.5 * (damp1 + dampt) - 0.5 * (xt - x1) * np.dot(dampt_Ut, Ut_xt)
         dxt = -Rxt / Rxt_xt
-        vprint(
-            param.verb,
-            4,
-            "   Transition: iNewton,Rxt,xt = %d,%.5e,%.5e" % (iNewton, Rxt, xt),
-        )
+        vprint(param.verb, 4, f'   Transition: iNewton,Rxt,xt = {iNewton},{Rxt:.5e},{xt:.5e}')
         dmax = 0.2 * dx * (1.1 - iNewton / nNewton)
         if abs(dxt) > dmax:
             dxt = dxt * dmax / abs(dxt)
@@ -1619,7 +1577,7 @@ def residual_transition(M: Mfoil, param: Param, x, U, Aux, wake: bool, simi: boo
             xt += dxt
 
     if iNewton >= nNewton:
-        vprint(param.verb, 1, "Transition location calculation failed.")
+        vprint(param.verb, 1, 'Transition location calculation failed.')
     M.vsol.xt = xt  # save transition location
 
     # prepare for xt linearizations
@@ -1683,21 +1641,9 @@ def residual_transition(M: Mfoil, param: Param, x, U, Aux, wake: bool, simi: boo
     # combined residual and linearization
     R = Rl + Rt
     if any(np.imag(R) != 0):
-        raise ValueError("imaginary transition residual")
-    R_U1 = (
-        Rl_U1
-        + np.dot(Rl_Utl, Utl_U1)
-        + np.outer(Rl_x[:, 1], xt_U1)
-        + np.dot(Rt_Utt, Utt_U1)
-        + np.outer(Rt_x[:, 0], xt_U1)
-    )
-    R_U2 = (
-        np.dot(Rl_Utl, Utl_U2)
-        + np.outer(Rl_x[:, 1], xt_U2)
-        + np.dot(Rt_Utt, Utt_U2)
-        + Rt_U2
-        + np.outer(Rt_x[:, 0], xt_U2)
-    )
+        raise ValueError('imaginary transition residual')
+    R_U1 = Rl_U1 + np.dot(Rl_Utl, Utl_U1) + np.outer(Rl_x[:, 1], xt_U1) + np.dot(Rt_Utt, Utt_U1) + np.outer(Rt_x[:, 0], xt_U1)
+    R_U2 = np.dot(Rl_Utl, Utl_U2) + np.outer(Rl_x[:, 1], xt_U2) + np.dot(Rt_Utt, Utt_U2) + Rt_U2 + np.outer(Rt_x[:, 0], xt_U2)
     R_U = np.hstack((R_U1, R_U2))
     R_x = np.stack(
         (
@@ -2129,9 +2075,7 @@ def get_Hs(U, param: Param, turb: bool, wake: bool):
         if Hk < 4.35:
             num = 0.0111 * a**2 - 0.0278 * a**3
             Hs = num / (Hk + 1) + 1.528 - 0.0002 * (a * Hk) ** 2
-            Hs_Hk = (
-                (0.0111 * 2 * a - 0.0278 * 3 * a**2) / (Hk + 1) - num / (Hk + 1) ** 2 - 0.0002 * 2 * a * Hk * (Hk + a)
-            )
+            Hs_Hk = (0.0111 * 2 * a - 0.0278 * 3 * a**2) / (Hk + 1) - num / (Hk + 1) ** 2 - 0.0002 * 2 * a * Hk * (Hk + a)
         else:
             Hs = 0.015 * a**2 / Hk + 1.528
             Hs_Hk = 0.015 * 2 * a / Hk - 0.015 * a**2 / Hk**2
@@ -2368,11 +2312,7 @@ def get_Ret(U, param: Param):
         rho = param.rho0 / den ** (1 / gmi)
         rho_U = (-1 / gmi) * rho / den * den_M2 * M2_U  # density
         Ret = rho * uk * U[0] / mu
-        Ret_U = (
-            rho_U * uk * U[0] / mu
-            + (rho * U[0] / mu - Ret / mu * mu_uk) * np.array([0, 0, 0, uk_u])
-            + rho * uk / mu * np.array([1, 0, 0, 0])
-        )
+        Ret_U = rho_U * uk * U[0] / mu + (rho * U[0] / mu - Ret / mu * mu_uk) * np.array([0, 0, 0, uk_u]) + rho * uk / mu * np.array([1, 0, 0, 0])
     else:
         Ret = param.rho0 * U[0] * U[3] / param.mu0
         Ret_U = np.array([U[3], 0, 0, U[0]]) / param.mu0
@@ -2593,7 +2533,7 @@ def get_cDi_turbwall(U, param: Param, wake: bool):
     #   cDi, cDi_U : dissipation function and its linearization w.r.t. U (1x4)
     # DETAILS
     #   This is one contribution to the dissipation function cDi = 2*cD/H*
-    if (wake):
+    if wake:
         return 0, np.zeros(4)  # for pinging
     turb = True
     # get cf, Hk, Hs, Us

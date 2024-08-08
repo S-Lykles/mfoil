@@ -63,7 +63,7 @@ def build_gamma(foil: Panel, param, alpha: float, chord=1) -> Isol:
     t, hTE, dtdx, tcp, tdp = TE_info(foil.x)  # trailing-edge info
     nogap = abs(hTE) < 1e-10 * chord  # indicates no TE gap
 
-    vprint(param.verb, 1, "\n <<< Solving the inviscid problem >>> \n")
+    vprint(param.verb, 1, '\n <<< Solving the inviscid problem >>> \n')
 
     # Build influence matrix and rhs
     for i in range(N):  # loop over nodes
@@ -103,14 +103,7 @@ def build_gamma(foil: Panel, param, alpha: float, chord=1) -> Isol:
     return isol
 
 
-def inviscid_velocity(
-    X: F64Arr,
-    G: F64Arr,
-    Vinf: float,
-    alpha: float,
-    x: F64Arr,
-    dolin: bool
-):
+def inviscid_velocity(X: F64Arr, G: F64Arr, Vinf: float, alpha: float, x: F64Arr, dolin: bool):
     """
     Returns the inviscid velocity at a point due to gamma on panels and freestream velocity
 
@@ -177,7 +170,7 @@ def inviscid_velocity(
         return V, None
 
 
-def build_wake(isol: Isol, foil: Panel, oper, wakelen, chord: float=1):
+def build_wake(isol: Isol, foil: Panel, oper, wakelen, chord: float = 1):
     # builds wake panels from the inviscid solution
     # INPUT
     #   M     : mfoil class with a valid inviscid solution (gam)
@@ -191,7 +184,7 @@ def build_wake(isol: Isol, foil: Panel, oper, wakelen, chord: float=1):
     #   Uses a predictor-corrector method
     #   Point spacing is geometric; prescribed wake length and number of points
 
-    assert len(isol.gam) > 0, "No inviscid solution"
+    assert len(isol.gam) > 0, 'No inviscid solution'
     N = foil.N  # number of points on the airfoil
     Vinf = oper.Vinf  # freestream speed
     Nw = int(np.ceil(N / 10 + 10 * wakelen))  # number of points on wake
@@ -204,7 +197,7 @@ def build_wake(isol: Isol, foil: Panel, oper, wakelen, chord: float=1):
     xyte = 0.5 * (xy1 + xyN)  # TE midpoint
     n = xyN - xy1
     t = np.array([n[1], -n[0]])  # normal and tangent
-    assert t[0] > 0, "Wrong wake direction; ensure airfoil points are CCW"
+    assert t[0] > 0, 'Wrong wake direction; ensure airfoil points are CCW'
     xyw[:, 0] = xyte + 1e-5 * t * chord  # first wake point, just behind TE
     sw = S[N - 1] + sv  # s-values on wake, measured as continuation of the airfoil
 
@@ -255,9 +248,9 @@ def calc_ue_sigma(isol: Isol, foil: Panel, wake: Panel):
     #   airfoil panel sources are constant strength
     #   wake panel sources are two-piece linear
 
-    assert len(isol.gam) > 0, "No inviscid solution"
+    assert len(isol.gam) > 0, 'No inviscid solution'
     N, Nw = foil.N, wake.N  # number of points on the airfoil/wake
-    assert Nw > 0, "No wake"
+    assert Nw > 0, 'No wake'
 
     # Cgam = d(wake uei)/d(gamma)   [Nw x N]   (not sparse)
     Cgam = np.zeros([Nw, N])
@@ -356,7 +349,7 @@ def calc_ue_sigma(isol: Isol, foil: Panel, wake: Panel):
 
 
 def calc_ue_m(isol: Isol, foil: Panel, wake: Panel):
-    '''Calculates sensitivity matrix of ue w.r.t. transpiration BC mass sources'''
+    """Calculates sensitivity matrix of ue w.r.t. transpiration BC mass sources"""
     calc_ue_sigma(isol, foil, wake)
 
     # initialize sigma_m as lil_matrix (sparse), this is efficient for building
@@ -378,7 +371,7 @@ def rebuild_ue_m(isol: Isol, foil: Panel, wake: Panel):
     #   airfoil panel sources are constant strength
     #   wake panel sources are two-piece linear
 
-    assert len(isol.ue_sigma) > 0, "Need ue_sigma to build ue_m"
+    assert len(isol.ue_sigma) > 0, 'Need ue_sigma to build ue_m'
 
     # sigma_m = d(source)/d(mass)  [(N+Nw-2) x (N+Nw)]  (sparse)
     N, Nw = foil.N, wake.N  # number of points on the airfoil/wake
@@ -399,7 +392,7 @@ def rebuild_ue_m(isol: Isol, foil: Panel, wake: Panel):
     sgue = np.concatenate((isol.sign_ue, np.ones(Nw)))
 
     # ue_m = ue_sigma * sigma_m [(N+Nw) x (N+Nw)] (not sparse)
-    isol.ue_m = sparse.spdiags(sgue, 0, N + Nw, N + Nw, "csr") @ isol.ue_sigma @ isol.sigma_m
+    isol.ue_m = sparse.spdiags(sgue, 0, N + Nw, N + Nw, 'csr') @ isol.ue_sigma @ isol.sigma_m
 
 
 def panel_info(Xj, xi):
@@ -431,7 +424,9 @@ def panel_info(Xj, xi):
     z = np.dot(xz, n)  # in panel-aligned coord system
 
     # distances and angles
-    def dist(a, b): return np.sqrt(a**2 + b**2)
+    def dist(a, b):
+        return np.sqrt(a**2 + b**2)
+
     d = dist(xj2 - xj1, zj2 - zj1)  # panel length
     r1 = dist(x, z)  # left edge to control point
     r2 = dist(x - d, z)  # right edge to control point
@@ -504,9 +499,7 @@ def panel_linvortex_stream(Xj, xi):
 
     # streamfunction components
     P1 = (0.5 / np.pi) * (z * (theta2 - theta1) - d + x * logr1 - (x - d) * logr2)
-    P2 = x * P1 + (0.5 / np.pi) * (
-        0.5 * r2**2 * logr2 - 0.5 * r1**2 * logr1 - r2**2 / 4 + r1**2 / 4
-    )
+    P2 = x * P1 + (0.5 / np.pi) * (0.5 * r2**2 * logr2 - 0.5 * r1**2 * logr1 - r2**2 / 4 + r1**2 / 4)
 
     # influence coefficients
     a = P1 - P2 / d
@@ -533,9 +526,7 @@ def panel_constsource_velocity(Xj, xi, vdir):
     t, n, x, z, d, r1, r2, theta1, theta2 = panel_info(Xj, xi)
 
     ep = 1e-9
-    logr1, theta1, theta2 = (
-        (0, np.pi, np.pi) if (r1 < ep) else (np.log(r1), theta1, theta2)
-    )
+    logr1, theta1, theta2 = (0, np.pi, np.pi) if (r1 < ep) else (np.log(r1), theta1, theta2)
     logr2, theta1, theta2 = (0, 0, 0) if (r2 < ep) else (np.log(r2), theta1, theta2)
 
     # velocity in panel-aligned coord system
@@ -566,9 +557,7 @@ def panel_constsource_stream(Xj, xi):
 
     # streamfunction
     ep = 1e-9
-    logr1, theta1, theta2 = (
-        (0, np.pi, np.pi) if (r1 < ep) else (np.log(r1), theta1, theta2)
-    )
+    logr1, theta1, theta2 = (0, np.pi, np.pi) if (r1 < ep) else (np.log(r1), theta1, theta2)
     logr2, theta1, theta2 = (0, 0, 0) if (r2 < ep) else (np.log(r2), theta1, theta2)
 
     P = (x * (theta1 - theta2) + d * theta2 + z * logr1 - z * logr2) / (2 * np.pi)
@@ -640,16 +629,12 @@ def panel_linsource_stream(Xj, xi):
 
     # check for r1, r2 zero
     ep = 1e-9
-    logr1, theta1, theta2 = (
-        (0, np.pi, np.pi) if (r1 < ep) else (np.log(r1), theta1, theta2)
-    )
+    logr1, theta1, theta2 = (0, np.pi, np.pi) if (r1 < ep) else (np.log(r1), theta1, theta2)
     logr2, theta1, theta2 = (0, 0, 0) if (r2 < ep) else (np.log(r2), theta1, theta2)
 
     # streamfunction components
     P1 = (0.5 / np.pi) * (x * (theta1 - theta2) + theta2 * d + z * logr1 - z * logr2)
-    P2 = x * P1 + (0.5 / np.pi) * (
-        0.5 * r2**2 * theta2 - 0.5 * r1**2 * theta1 - 0.5 * z * d
-    )
+    P2 = x * P1 + (0.5 / np.pi) * (0.5 * r2**2 * theta2 - 0.5 * r1**2 * theta1 - 0.5 * z * d)
 
     # influence coefficients
     a = P1 - P2 / d
