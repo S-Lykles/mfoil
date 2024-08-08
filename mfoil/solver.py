@@ -1,14 +1,12 @@
 import numpy as np
 from numpy.typing import NDArray
-from typing import List
 from scipy import sparse
 from mfoil.inviscid import (
-    panel_linvortex_stream,
-    panel_constsource_stream,
-    panel_linsource_stream,
-    panel_constsource_velocity,
-    panel_linvortex_velocity,
-    panel_linsource_velocity
+    Isol,
+    rebuild_ue_m,
+    calc_ue_m,
+    build_wake,
+    build_gamma
 )
 from mfoil.utils import vprint, sind, cosd, norm2
 from mfoil.geometry import (
@@ -39,21 +37,6 @@ class Oper:  # operating conditions and flags
         self.Ma: float = 0.0  # Mach number
 
 
-class Isol:  # inviscid solution variables
-    def __init__(self):
-        self.AIC = []  # aero influence coeff matrix
-        self.gamref = []  # 0,90-deg alpha vortex strengths at airfoil nodes
-        self.gam = []  # vortex strengths at airfoil nodes (for current alpha)
-        self.sstag: float = 0.0  # s location of stagnation point
-        self.sstag_g = np.array([0, 0])  # lin of sstag w.r.t. adjacent gammas
-        self.sstag_ue = np.array([0, 0])  # lin of sstag w.r.t. adjacent ue values
-        self.Istag: List[int, int] = [0, 0]  # node indices before/after stagnation
-        self.sgnue = []  # +/- 1 on upper/lower surface nodes
-        self.xi = []  # distance from the stagnation at all points
-        self.uewi = []  # inviscid edge velocity in wake
-        self.uewiref = []  # 0,90-deg alpha inviscid ue solutions on wake
-
-
 class Vsol:  # viscous solution variables
     def __init__(self):
         self.th = []  # theta = momentum thickness [Nsys]
@@ -62,7 +45,6 @@ class Vsol:  # viscous solution variables
         self.wgap = []  # wake gap over wake points
         self.ue_m = []  # linearization of ue w.r.t. mass (all nodes)
         self.sigma_m = []  # d(source)/d(mass) matrix
-        self.ue_sigma = []  # d(ue)/d(source) matrix
         self.turb = []  # flag over nodes indicating if turbulent (1) or lam (0)
         self.xt: float = 0.0  # transition location (xi) on current surface under consideration
         self.Xt = np.zeros((2, 2))  # transition xi/x for lower and upper surfaces
@@ -390,8 +372,7 @@ def solve_inviscid(M: Mfoil):
 
     assert M.foil.N > 0, "No panels"
     init_thermo(M)
-    M.isol.sgnue = np.ones(M.foil.N)  # do not distinguish sign of ue if inviscid
-    build_gamma(M, M.oper.alpha)
+    M.isol = build_gamma(M.foil, M.param, M.oper.alpha, M.geom.chord)
     M.glob.conv = True  # no coupled system ... convergence is guaranteed
 
 
@@ -419,7 +400,7 @@ def get_ueinv(M: Mfoil):
     assert len(M.isol.gam) > 0, "No inviscid solution"
     alpha = M.oper.alpha
     cs = np.array([cosd(alpha), sind(alpha)])
-    uea = M.isol.sgnue * np.dot(M.isol.gamref, cs)  # airfoil
+    uea = M.isol.sign_ue * np.dot(M.isol.gamref, cs)  # airfoil
     if (M.oper.viscous) and (M.wake.N > 0):
         uew = np.dot(M.isol.uewiref, cs)  # wake
         uew[0] = uea[-1]  # ensures continuity of upper surface and wake ue
@@ -450,432 +431,13 @@ def get_ueinvref(M: Mfoil) -> NDArray[np.float64]:
     """
 
     assert len(M.isol.gam) > 0, "No inviscid solution"
-    uearef = M.isol.sgnue[:, np.newaxis] * M.isol.gamref
+    uearef = M.isol.sign_ue[:, np.newaxis] * M.isol.gamref
     if (M.oper.viscous) and (M.wake.N > 0):
         uewref = M.isol.uewiref  # wake
         uewref[0, :] = uearef[-1, :]  # continuity of upper surface and wake
         return np.concatenate((uearef, uewref))
     else:
         return uearef
-
-
-def build_gamma(M: Mfoil, alpha: float):
-    """
-    Builds and solves the inviscid linear system for alpha=0, 90, and input angle
-
-    Parameters
-    ----------
-    M : Mfoil
-        Mfoil structure that contains the aerodynamic model
-    alpha : float
-        Angle of attack in degrees
-
-    Updates
-    -------
-    M.isol.gamref : (N, 2) ndarray
-        0,90deg vorticity distributions at each node
-    M.isol.gam : (N,) ndarray
-        Gamma for the particular input angle, alpha
-    M.isol.AIC : (N+1, N+1) ndarray
-        Aerodynamic influence coefficient matrix, filled in
-
-    Notes
-    -----
-    - Utilizes a streamfunction approach with constant psi at each node
-    - Implements a continuous linear vorticity distribution on the airfoil panels
-    - Enforces the Kutta condition at the trailing edge (TE)
-    - Accounts for TE gap through constant source/vorticity panels
-    - Handles sharp TE through gamma extrapolation
-    """
-    N = M.foil.N  # number of points
-    A = np.zeros([N + 1, N + 1])  # influence matrix
-    rhs = np.zeros([N + 1, 2])  # right-hand sides for 0,90
-    t, hTE, dtdx, tcp, tdp = TE_info(M.foil.x)  # trailing-edge info
-    nogap = abs(hTE) < 1e-10 * M.geom.chord  # indicates no TE gap
-
-    vprint(M.param.verb, 1, "\n <<< Solving the inviscid problem >>> \n")
-
-    # Build influence matrix and rhs
-    for i in range(N):  # loop over nodes
-        xi = M.foil.x[:, i]  # coord of node i
-        for j in range(N - 1):  # loop over panels
-            aij, bij = panel_linvortex_stream(M.foil.x[:, [j, j + 1]], xi)
-            A[i, j] += aij
-            A[i, j + 1] += bij
-        A[i, N] = -1  # last unknown = streamfunction value on surf
-
-        # right-hand sides
-        rhs[i, :] = [-xi[1], xi[0]]
-        # TE source influence
-        a = panel_constsource_stream(M.foil.x[:, [N - 1, 0]], xi)
-        A[i, 0] += -a * (0.5 * tcp)
-        A[i, N - 1] += a * (0.5 * tcp)
-        # TE vortex panel
-        a, b = panel_linvortex_stream(M.foil.x[:, [N - 1, 0]], xi)
-        A[i, 0] += -(a + b) * (-0.5 * tdp)
-        A[i, N - 1] += (a + b) * (-0.5 * tdp)
-
-    # special Nth equation (extrapolation of gamma differences) if no gap
-    if nogap:
-        A[N - 1, :] = 0
-        A[N - 1, [0, 1, 2, N - 3, N - 2, N - 1]] = [1, -2, 1, -1, 2, -1]
-
-    # Kutta condition
-    A[N, 0] = 1
-    A[N, N - 1] = 1
-
-    # Solve system for unknown vortex strengths
-    M.isol.AIC = A
-    g = np.linalg.solve(M.isol.AIC, rhs)
-
-    M.isol.gamref = g[0:N, :]  # last value is surf streamfunction
-    M.isol.gam = M.isol.gamref[:, 0] * cosd(alpha) + M.isol.gamref[:, 1] * sind(alpha)
-
-
-def inviscid_velocity(
-    X: NDArray[np.float64],
-    G: NDArray[np.float64],
-    Vinf: float,
-    alpha: float,
-    x: NDArray[np.float64],
-    dolin: bool,
-):
-    """
-    Returns the inviscid velocity at a point due to gamma on panels and freestream velocity
-
-    Parameters
-    ----------
-    X : (N, 2) ndarray
-        Coordinates of N panel nodes (N-1 panels)
-    G : (N,) ndarray
-        Vector of gamma values at each airfoil node
-    Vinf : float
-        Freestream speed magnitude
-    alpha : float
-        Angle of attack in degrees
-    x : (2,) ndarray
-        Location of the point at which the velocity vector is desired
-    dolin : bool
-        True to also return linearization
-
-    Returns
-    -------
-    V : (2,) ndarray
-        Velocity at the desired point.
-    V_G : (2, N) ndarray, optional
-        Linearization of V with respect to G, returned if dolin is True
-
-    Notes
-    -----
-    - Utilizes linear vortex panels on the airfoil
-    - Accounts for trailing edge constant source/vortex panel
-    - Includes the freestream contribution
-    """
-
-    N = X.shape[1]  # number of points
-    V = np.zeros(2)  # velocity
-    if dolin:
-        V_G = np.zeros([2, N])
-    t, hTE, dtdx, tcp, tdp = TE_info(X)  # trailing-edge info
-    # assume x is not a midpoint of a panel (can check for this)
-    for j in range(N - 1):  # loop over panels
-        a, b = panel_linvortex_velocity(X[:, [j, j + 1]], x, None, False)
-        V += a * G[j] + b * G[j + 1]
-        if dolin:
-            V_G[:, j] += a
-            V_G[:, j + 1] += b
-    # TE source influence
-    a = panel_constsource_velocity(X[:, [N - 1, 0]], x, None)
-    f1, f2 = a * (-0.5 * tcp), a * 0.5 * tcp
-    V += f1 * G[0] + f2 * G[N - 1]
-    if dolin:
-        V_G[:, 0] += f1
-        V_G[:, N - 1] += f2
-    # TE vortex influence
-    a, b = panel_linvortex_velocity(X[:, [N - 1, 0]], x, None, False)
-    f1, f2 = (a + b) * (0.5 * tdp), (a + b) * (-0.5 * tdp)
-    V += f1 * G[0] + f2 * G[N - 1]
-    if dolin:
-        V_G[:, 0] += f1
-        V_G[:, N - 1] += f2
-    # freestream influence
-    V += Vinf * np.array([cosd(alpha), sind(alpha)])
-    if dolin:
-        return V, V_G
-    else:
-        return V
-
-
-def build_wake(M: Mfoil):
-    # builds wake panels from the inviscid solution
-    # INPUT
-    #   M     : mfoil class with a valid inviscid solution (gam)
-    # OUTPUT
-    #   M.wake.N  : Nw, the number of wake points
-    #   M.wake.x  : coordinates of the wake points (2xNw)
-    #   M.wake.s  : s-values of wake points (continuation of airfoil) (1xNw)
-    #   M.wake.t  : tangent vectors at wake points (2xNw)
-    # DETAILS
-    #   Constructs the wake path through repeated calls to inviscid_velocity
-    #   Uses a predictor-corrector method
-    #   Point spacing is geometric; prescribed wake length and number of points
-
-    assert len(M.isol.gam) > 0, "No inviscid solution"
-    N = M.foil.N  # number of points on the airfoil
-    Vinf = M.oper.Vinf  # freestream speed
-    Nw = int(np.ceil(N / 10 + 10 * M.geom.wakelen))  # number of points on wake
-    S = M.foil.s  # airfoil S values
-    ds1 = 0.5 * (S[1] - S[0] + S[N - 1] - S[N - 2])  # first nominal wake panel size
-    sv = space_geom(ds1, M.geom.wakelen * M.geom.chord, Nw)  # geometrically-spaced points
-    xyw = np.zeros([2, Nw])
-    tw = xyw.copy()  # arrays of x,y points and tangents on wake
-    xy1, xyN = M.foil.x[:, 0], M.foil.x[:, N - 1]  # airfoil TE points
-    xyte = 0.5 * (xy1 + xyN)  # TE midpoint
-    n = xyN - xy1
-    t = np.array([n[1], -n[0]])  # normal and tangent
-    assert t[0] > 0, "Wrong wake direction; ensure airfoil points are CCW"
-    xyw[:, 0] = xyte + 1e-5 * t * M.geom.chord  # first wake point, just behind TE
-    sw = S[N - 1] + sv  # s-values on wake, measured as continuation of the airfoil
-
-    # loop over rest of wake
-    for i in range(Nw - 1):
-        v1 = inviscid_velocity(M.foil.x, M.isol.gam, Vinf, M.oper.alpha, xyw[:, i], False)
-        v1 = v1 / norm2(v1)
-        tw[:, i] = v1  # normalized
-        xyw[:, i + 1] = xyw[:, i] + (sv[i + 1] - sv[i]) * v1  # forward Euler (predictor) step
-        v2 = inviscid_velocity(M.foil.x, M.isol.gam, Vinf, M.oper.alpha, xyw[:, i + 1], False)
-        v2 = v2 / norm2(v2)
-        tw[:, i + 1] = v2  # normalized
-        xyw[:, i + 1] = xyw[:, i] + (sv[i + 1] - sv[i]) * 0.5 * (v1 + v2)  # corrector step
-
-    # determine inviscid ue in the wake, and 0,90deg ref ue too
-    uewi = np.zeros([Nw, 1])
-    uewiref = np.zeros([Nw, 2])
-    for i in range(Nw):
-        v = inviscid_velocity(M.foil.x, M.isol.gam, Vinf, M.oper.alpha, xyw[:, i], False)
-        uewi[i] = np.dot(v, tw[:, i])
-        v = inviscid_velocity(M.foil.x, M.isol.gamref[:, 0], Vinf, 0, xyw[:, i], False)
-        uewiref[i, 0] = np.dot(v, tw[:, i])
-        v = inviscid_velocity(M.foil.x, M.isol.gamref[:, 1], Vinf, 90, xyw[:, i], False)
-        uewiref[i, 1] = np.dot(v, tw[:, i])
-
-    # set values
-    M.wake.N = Nw
-    M.wake.x = xyw
-    M.wake.s = sw
-    M.wake.t = tw
-    M.isol.uewi = uewi
-    M.isol.uewiref = uewiref
-
-
-def stagpoint_find(M: Mfoil):
-    # finds the LE stagnation point on the airfoil (using inviscid solution)
-    # INPUTS
-    #   M  : mfoil class with inviscid solution, gam
-    # OUTPUTS
-    #   M.isol.sstag   : scalar containing s value of stagnation point
-    #   M.isol.sstag_g : linearization of sstag w.r.t gamma (1xN)
-    #   M.isol.Istag   : [i,i+1] node indices before/after stagnation (1x2)
-    #   M.isol.sgnue   : sign conversion from CW to tangential velocity (1xN)
-    #   M.isol.xi      : distance from stagnation point at each node (1xN)
-
-    assert len(M.isol.gam) > 0, "No inviscid solution"
-    N = M.foil.N  # number of points on the airfoil
-    for j in range(N):
-        if M.isol.gam[j] > 0:
-            break
-    assert j < N - 1, "no stagnation point"
-    idx = [j - 1, j]
-    G = M.isol.gam[idx]
-    S = M.foil.s[idx]
-    M.isol.Istag = idx  # indices of neighboring gammas
-    den = G[1] - G[0]
-    w1 = G[1] / den
-    w2 = -G[0] / den
-    M.isol.sstag = w1 * S[0] + w2 * S[1]  # s location
-    M.isol.xstag = M.foil.x[:, j - 1] * w1 + M.foil.x[:, j] * w2  # x location
-    st_g1 = G[1] * (S[0] - S[1]) / (den * den)
-    M.isol.sstag_g = np.array([st_g1, -st_g1])
-    M.isol.sgnue = np.sign(M.isol.gam)
-    M.isol.xi = np.concatenate((abs(M.foil.s - M.isol.sstag), M.wake.s - M.isol.sstag))
-
-
-def rebuild_isol(M: Mfoil):
-    # rebuilds inviscid solution, after an angle of attack change
-    # INPUT
-    #   M     : mfoil class with inviscid reference solution and angle of attack
-    # OUTPUT
-    #   M.isol.gam : correct combination of reference gammas
-    #   New stagnation point location if inviscid
-    #   New wake and source influence matrix if viscous
-
-    assert len(M.isol.gam) > 0, "No inviscid solution"
-    vprint(M.param.verb, 2, "\n  Rebuilding the inviscid solution.")
-    alpha = M.oper.alpha
-    M.isol.gam = M.isol.gamref[:, 0] * cosd(alpha) + M.isol.gamref[:, 1] * sind(alpha)
-    if not M.oper.viscous:
-        stagpoint_find(M)  # viscous stag point movement is handled separately
-    elif M.oper.redowake:
-        build_wake(M)
-        identify_surfaces(M)
-        calc_ue_m(M)  # rebuild matrices due to changed wake geometry
-
-
-# ============ VISCOUS FUNCTIONS ==============
-def calc_ue_m(M: Mfoil):
-    # calculates sensitivity matrix of ue w.r.t. transpiration BC mass sources
-    # INPUT
-    #   M : mfoil class with wake already built
-    # OUTPUT
-    #   M.vsol.sigma_m : d(source)/d(mass) matrix, for computing source strengths
-    #   M.vsol.ue_m    : d(ue)/d(mass) matrix, for computing tangential velocity
-    # DETAILS
-    #   "mass" flow refers to area flow (we exclude density)
-    #   sigma_m and ue_m return values at each node (airfoil and wake)
-    #   airfoil panel sources are constant strength
-    #   wake panel sources are two-piece linear
-
-    assert len(M.isol.gam) > 0, "No inviscid solution"
-    N, Nw = M.foil.N, M.wake.N  # number of points on the airfoil/wake
-    assert Nw > 0, "No wake"
-
-    # Cgam = d(wake uei)/d(gamma)   [Nw x N]   (not sparse)
-    Cgam = np.zeros([Nw, N])
-    for i in range(Nw):
-        [v, v_G] = inviscid_velocity(M.foil.x, M.isol.gam, 0, 0, M.wake.x[:, i], True)
-        Cgam[i, :] = v_G[0, :] * M.wake.t[0, i] + v_G[1, :] * M.wake.t[1, i]
-
-    # B = d(airfoil surf streamfunction)/d(source)  [(N+1) x (N+Nw-2)]  (not sparse)
-    B = np.zeros([N + 1, N + Nw - 2])  # note, N+Nw-2 = # of panels
-
-    for i in range(N):  # loop over points on the airfoil
-        xi = M.foil.x[:, i]  # coord of point i
-        for j in range(N - 1):  # loop over airfoil panels
-            B[i, j] = panel_constsource_stream(M.foil.x[:, [j, j + 1]], xi)
-        for j in range(Nw - 1):  # loop over wake panels
-            Xj = M.wake.x[:, [j, j + 1]]  # panel endpoint coordinates
-            Xm = 0.5 * (Xj[:, 0] + Xj[:, 1])  # panel midpoint
-            Xj = np.transpose(np.vstack((Xj[:, 0], Xm, Xj[:, 1])))  # left, mid, right coords on panel
-            if j == (Nw - 2):
-                Xj[:, 2] = 2 * Xj[:, 2] - Xj[:, 1]  # ghost extension at last point
-            a, b = panel_linsource_stream(Xj[:, [0, 1]], xi)  # left half panel
-            if j > 0:
-                B[i, N - 1 + j] += 0.5 * a + b
-                B[i, N - 1 + j - 1] += 0.5 * a
-            else:
-                B[i, N - 1 + j] += b
-            a, b = panel_linsource_stream(Xj[:, [1, 2]], xi)  # right half panel
-            B[i, N - 1 + j] += a + 0.5 * b
-            if j < Nw - 2:
-                B[i, N - 1 + j + 1] += 0.5 * b
-            else:
-                B[i, N - 1 + j] += 0.5 * b
-
-    # Bp = - inv(AIC) * B   [N x (N+Nw-2)]  (not sparse)
-    # Note, Bp is d(airfoil gamma)/d(source)
-    Bp = -np.linalg.solve(M.isol.AIC, B)  # this has N+1 rows, but the last one is zero
-    Bp = Bp[:-1, :]  # trim the last row
-
-    # Csig = d(wake uei)/d(source) [Nw x (N+Nw-2)]  (not sparse)
-    Csig = np.zeros([Nw, N + Nw - 2])
-    for i in range(Nw):
-        xi, ti = M.wake.x[:, i], M.wake.t[:, i]  # point, tangent on wake
-
-        # first/last airfoil panel effects on i=0 wake point handled separately
-        jstart, jend = 0 + (i == 0), N - 1 - (i == 0)
-        for j in range(jstart, jend):  # constant sources on airfoil panels
-            Csig[i, j] = panel_constsource_velocity(M.foil.x[:, [j, j + 1]], xi, ti)
-
-        # piecewise linear sources across wake panel halves (else singular)
-        for j in range(Nw):  # loop over wake points
-            idx = [max(j - 1, 0), j, min(j + 1, Nw - 1)]  # left, self, right
-
-            Xj = M.wake.x[:, idx]  # point coordinates
-            Xj[:, 0] = 0.5 * (Xj[:, 0] + Xj[:, 1])  # left midpoint
-            Xj[:, 2] = 0.5 * (Xj[:, 1] + Xj[:, 2])  # right midpoint
-
-            if j == Nw - 1:
-                Xj[:, 2] = 2 * Xj[:, 1] - Xj[:, 0]  # ghost extension at last point
-            d1 = norm2(Xj[:, 1] - Xj[:, 0])  # left half-panel length
-            d2 = norm2(Xj[:, 2] - Xj[:, 1])  # right half-panel length
-            if i == j:
-                if j == 0:  # first point: special TE system (three panels meet)
-                    dl = norm2(M.foil.x[:, 1] - M.foil.x[:, 0])  # lower surface panel length
-                    du = norm2(M.foil.x[:, N - 1] - M.foil.x[:, N - 2])  # upper surface panel length
-                    Csig[i, 0] += (0.5 / np.pi) * (np.log(dl / d2) + 1)  # lower panel effect
-                    Csig[i, N - 2] += (0.5 / np.pi) * (np.log(du / d2) + 1)  # upper panel effect
-                    Csig[i, N - 1] += -0.5 / np.pi  # self effect
-                elif j == Nw - 1:  # last point: no self effect of last pan (ghost extension)
-                    Csig[i, N - 1 + j - 1] += 0  # hence the 0
-                else:  # all other points
-                    aa = (0.25 / np.pi) * np.log(d1 / d2)
-                    Csig[i, N - 1 + j - 1] += aa + 0.5 / np.pi
-                    Csig[i, N - 1 + j] += aa - 0.5 / np.pi
-            else:
-                if j == 0:  # first point only has a half panel on the right
-                    a, b = panel_linsource_velocity(Xj[:, [1, 2]], xi, ti)
-                    Csig[i, N - 1] += b  # right half panel effect
-                    Csig[i, 0] += a  # lower airfoil panel effect
-                    Csig[i, N - 2] += a  # upper airfoil panel effect
-                elif j == Nw - 1:  # last point has a constant source ghost extension
-                    a = panel_constsource_velocity(Xj[:, [0, 2]], xi, ti)
-                    Csig[i, N + Nw - 3] += a  # full const source panel effect
-                else:  # all other points have a half panel on left and right
-                    [a1, b1] = panel_linsource_velocity(Xj[:, [0, 1]], xi, ti)  # left half-panel ue contrib
-                    [a2, b2] = panel_linsource_velocity(Xj[:, [1, 2]], xi, ti)  # right half-panel ue contrib
-                    Csig[i, N - 1 + j - 1] += a1 + 0.5 * b1
-                    Csig[i, N - 1 + j] += 0.5 * a2 + b2
-
-    # compute ue_sigma = d(unsigned ue)/d(source) [(N+Nw) x (N+Nw-2)] (not sparse)
-    # Df = +/- Bp = d(foil uei)/d(source)  [N x (N+Nw-2)]  (not sparse)
-    # Dw = (Cgam*Bp + Csig) = d(wake uei)/d(source)  [Nw x (N+Nw-2)]  (not sparse)
-    Dw = np.dot(Cgam, Bp) + Csig
-    Dw[0, :] = Bp[-1, :]  # ensure first wake point has same ue as TE
-    M.vsol.ue_sigma = np.vstack((Bp, Dw))  # store combined matrix
-
-    # build ue_m from ue_sigma, using sgnue
-    rebuild_ue_m(M)
-
-
-def rebuild_ue_m(M: Mfoil):
-    # rebuilds ue_m matrix after stagnation panel change (new sgnue)
-    # INPUT
-    #   M : mfoil class with calc_ue_m already called once
-    # OUTPUT
-    #   M.vsol.sigma_m : d(source)/d(mass) matrix, for computing source strengths
-    #   M.vsol.ue_m    : d(ue)/d(mass) matrix, for computing tangential velocity
-    # DETAILS
-    #   "mass" flow refers to area flow (we exclude density)
-    #   sigma_m and ue_m return values at each node (airfoil and wake)
-    #   airfoil panel sources are constant strength
-    #   wake panel sources are two-piece linear
-
-    assert len(M.vsol.ue_sigma) > 0, "Need ue_sigma to build ue_m"
-
-    # Dp = d(source)/d(mass)  [(N+Nw-2) x (N+Nw)]  (sparse)
-    N, Nw = M.foil.N, M.wake.N  # number of points on the airfoil/wake
-    if isinstance(M.vsol.sigma_m, list) or not (M.vsol.sigma_m.shape == (N + Nw - 2, N + Nw)):
-        alloc_Dp = True
-        M.vsol.sigma_m = sparse.lil_matrix((N + Nw - 2, N + Nw))  # empty matrix
-    else:
-        alloc_Dp = False
-        M.vsol.sigma_m *= 0.0
-    for i in range(N - 1):
-        ds = M.foil.s[i + 1] - M.foil.s[i]
-        # Note, at stagnation: ue = K*s, dstar = const, m = K*s*dstar
-        # sigma = dm/ds = K*dstar = m/s (separate for each side, +/-)
-        M.vsol.sigma_m[i, [i, i + 1]] = M.isol.sgnue[[i, i + 1]] * np.array([-1.0, 1.0]) / ds
-    for i in range(Nw - 1):
-        ds = M.wake.s[i + 1] - M.wake.s[i]
-        M.vsol.sigma_m[N - 1 + i, [N + i, N + i + 1]] = np.array([-1.0, 1.0]) / ds
-    if alloc_Dp:
-        M.vsol.sigma_m = M.vsol.sigma_m.tocsr()
-
-    # sign of ue at all points (wake too)
-    sgue = np.concatenate((M.isol.sgnue, np.ones(Nw)))
-
-    # ue_m = ue_sigma * sigma_m [(N+Nw) x (N+Nw)] (not sparse)
-    M.vsol.ue_m = sparse.spdiags(sgue, 0, N + Nw, N + Nw, "csr") @ M.vsol.ue_sigma @ M.vsol.sigma_m
 
 
 def init_thermo(M: Mfoil):
@@ -916,8 +478,8 @@ def identify_surfaces(M: Mfoil):
     #   M.vsol.Is : list of of node indices for lower(1), upper(2), wake(3)
 
     M.vsol.Is = [
-        range(M.isol.Istag[0], -1, -1),
-        range(M.isol.Istag[1], M.foil.N),
+        range(M.isol.stag_idx[0], -1, -1),
+        range(M.isol.stag_idx[1], M.foil.N),
         range(M.foil.N, M.foil.N + M.wake.N),
     ]
 
@@ -943,6 +505,39 @@ def set_wake_gap(M: Mfoil):
             wgap[i] = hTE * (1 + (2 + flen * dtdx) * xib) * (1 - xib) ** 2
     M.vsol.wgap = wgap
 
+def stagpoint_find(isol: Isol, foil: Panel, wake: Panel):
+    # finds the LE stagnation point on the airfoil (using inviscid solution)
+    # INPUTS
+    #   M  : mfoil class with inviscid solution, gam
+    # OUTPUTS
+    #   M.isol.sstag   : scalar containing s value of stagnation point
+    #   M.isol.sstag_g : linearization of sstag w.r.t gamma (1xN)
+    #   M.isol.Istag   : [i,i+1] node indices before/after stagnation (1x2)
+    #   M.isol.sgnue   : sign conversion from CW to tangential velocity (1xN)
+    #   M.isol.xi      : distance from stagnation point at each node (1xN)
+
+    assert len(isol.gam) > 0, "No inviscid solution"
+    N = foil.N  # number of points on the airfoil
+    j = 0
+    for j in range(N):
+        if isol.gam[j] > 0:
+            break
+    else:
+        assert False, "no stagnation point"
+    idx = [j - 1, j]
+    G = isol.gam[idx]
+    S = foil.s[idx]
+    isol.stag_idx = idx  # indices of neighboring gammas
+    den = G[1] - G[0]
+    w1 = G[1] / den
+    w2 = -G[0] / den
+    isol.sstag = w1 * S[0] + w2 * S[1]  # s location
+    isol.xstag = foil.x[:, j - 1] * w1 + foil.x[:, j] * w2  # x location
+    st_g1 = G[1] * (S[0] - S[1]) / (den * den)
+    isol.sstag_g = np.array([st_g1, -st_g1])
+    isol.sign_ue = np.sign(isol.gam)
+    isol.xi = np.concatenate((abs(foil.s - isol.sstag), wake.s - isol.sstag))
+
 
 def stagpoint_move(M: Mfoil):
     # moves the LE stagnation point on the airfoil using the global solution ue
@@ -953,7 +548,7 @@ def stagpoint_move(M: Mfoil):
     #   Possibly new stagnation panel, Istag, and hence new surfaces and matrices
 
     N = M.foil.N  # number of points on the airfoil
-    idx = M.isol.Istag  # current adjacent node indices
+    idx = M.isol.stag_idx  # current adjacent node indices
     ue = M.glob.U[3, :]  # edge velocity
     sstag0 = M.isol.sstag  # original stag point location
 
@@ -1004,15 +599,15 @@ def stagpoint_move(M: Mfoil):
     # matrices need to be recalculated if on a new panel
     if newpanel:
         vprint(M.param.verb, 2, "  New stagnation panel = %d %d" % (idx[0], idx[1]))
-        M.isol.Istag = idx  # new panel indices
+        M.isol.stag_idx = idx  # new panel indices
         for i in range(idx[0] + 1):
-            M.isol.sgnue[i] = -1
+            M.isol.sign_ue[i] = -1
         for i in range(idx[0] + 1, N):
-            M.isol.sgnue[i] = 1
+            M.isol.sign_ue[i] = 1
         identify_surfaces(M)  # re-identify surfaces
         M.glob.U[3, :] = ue  # sign of ue changed on some points near stag
         M.glob.realloc = True
-        rebuild_ue_m(M)
+        rebuild_ue_m(M.isol, M.foil, M.wake)
 
 
 def solve_viscous(M: Mfoil):
@@ -1026,11 +621,11 @@ def solve_viscous(M: Mfoil):
     solve_inviscid(M)
     M.oper.viscous = True
     init_thermo(M)
-    build_wake(M)
-    stagpoint_find(M)  # from the inviscid solution
+    M.wake = build_wake(M.isol, M.foil, M.oper, M.geom.wakelen, M.geom.chord)
+    stagpoint_find(M.isol, M.foil, M.wake)  # from the inviscid solution
     identify_surfaces(M)
     set_wake_gap(M)  # blunt TE dead air extent in wake
-    calc_ue_m(M)
+    calc_ue_m(M.isol, M.foil, M.wake)
     init_boundary_layer(M)  # initialize boundary layer from ue
     stagpoint_move(M)  # move stag point, using viscous solution
     solve_coupled(M)  # solve coupled system
@@ -1204,6 +799,20 @@ def update_state(M: Mfoil, dU, dalpha: float):
         if M.glob.U[2, i] < 0:
             M.glob.U[2, i] = 0.1 * ctmax
 
+    def rebuild_isol(M: Mfoil):
+        '''rebuilds inviscid solution, after an angle of attack change'''
+
+        assert len(M.isol.gam) > 0, "No inviscid solution"
+        vprint(M.param.verb, 2, "\n  Rebuilding the inviscid solution.")
+        alpha = M.oper.alpha
+        M.isol.gam = M.isol.gamref[:, 0] * cosd(alpha) + M.isol.gamref[:, 1] * sind(alpha)
+        if not M.oper.viscous:
+            stagpoint_find(M.isol, M.foil, M.wake)  # viscous stag point movement is handled separately
+        elif M.oper.redowake:
+            M.wake = build_wake(M.isol, M.foil, M.oper, M.geom.wakelen, M.geom.chord)
+            identify_surfaces(M)
+            calc_ue_m(M.isol, M.foil, M.wake)  # rebuild matrices due to changed wake geometry
+
     # rebuild inviscid solution (gam, wake) if angle of attack changed
     if abs(omega * dalpha) > 1e-10:
         rebuild_isol(M)
@@ -1250,14 +859,14 @@ def solve_glob(M: Mfoil):
     Iue = slice(3, 4 * Nsys, 4)  # ue indices
 
     # assemble the residual
-    R = np.concatenate((M.glob.R, ue - (ueinv + M.vsol.ue_m @ (ds * ue))))
+    R = np.concatenate((M.glob.R, ue - (ueinv + M.isol.ue_m @ (ds * ue))))
     # print('first Norm(R) = %.10e'%(norm2(R)))
 
     # assemble the Jacobian
     M.glob.R_V[0 : 3 * Nsys, 0 : 4 * Nsys] = M.glob.R_U
     idx = slice(3 * Nsys, 4 * Nsys, 1)
-    M.glob.R_V[idx, Iue] = sparse.identity(Nsys) - M.vsol.ue_m @ np.diag(ds)
-    M.glob.R_V[idx, Ids] = -M.vsol.ue_m @ np.diag(ue)
+    M.glob.R_V[idx, Iue] = sparse.identity(Nsys) - M.isol.ue_m @ np.diag(ds)
+    M.glob.R_V[idx, Ids] = -M.isol.ue_m @ np.diag(ue)
 
     if docl:
         # include cl-alpha residual and Jacobian
@@ -1277,6 +886,7 @@ def solve_glob(M: Mfoil):
         return dU, dV[-1]
     else:
         return dU, 0
+
 
 def clalpha_residual(M: Mfoil):
     # computes cl constraint (or just prescribed alpha) residual and Jacobian
@@ -1437,10 +1047,10 @@ def build_glob_sys(M: Mfoil):
     #   We use the chain rule (formula above) to account for this
     Nsys = M.glob.Nsys  # number of dofs
     Iue = range(3, 4 * Nsys, 4)  # ue indices in U
-    x_st = -M.isol.sgnue  # st = stag point [Nsys x 1]
+    x_st = -M.isol.sign_ue  # st = stag point [Nsys x 1]
     x_st = np.concatenate((x_st, -np.ones(M.wake.N)))  # wake same sens as upper surface
     R_st = M.glob.R_x @ x_st[:, np.newaxis]  # [3*Nsys x 1]
-    Ist, st_ue = M.isol.Istag, M.isol.sstag_ue  # stag points, sens
+    Ist, st_ue = M.isol.stag_idx, M.isol.sstag_ue  # stag points, sens
     if (alloc_R_x) or (alloc_R_U):
         R_st += 1e-15  # hack to avoid sparse matrix warning
     M.glob.R_U[:, Iue[Ist[0]]] += R_st * st_ue[0]

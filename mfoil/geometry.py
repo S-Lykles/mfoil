@@ -1,6 +1,6 @@
 import numpy as np
 from scipy.interpolate import CubicSpline, interp1d
-from mfoil.utils import cosd, sind, atan2, norm2, dist
+from mfoil.utils import cosd, sind, atan2, norm2
 
 
 class Geom:  # geometry
@@ -16,10 +16,10 @@ class Geom:  # geometry
 # ============ PANELING  ==============
 class Panel:  # paneling
     def __init__(self):
-        self.N = 0  # number of nodes
-        self.x = []  # node coordinates, [2 x N]
-        self.s = []  # arclength values at nodes
-        self.t = []  # dx/ds, dy/ds tangents at nodes
+        self.N: int = 0  # number of nodes
+        self.x = np.array([])  # node coordinates, [2 x N]
+        self.s = np.array([])  # arclength values at nodes
+        self.t = np.array([])  # dx/ds, dy/ds tangents at nodes
 
 
 def make_panels(geom: Geom, npanel: int, stgt=None) -> Panel:
@@ -72,42 +72,6 @@ def TE_info(X):
     return t, hTE, dtdx, tcp, tdp
 
 
-def panel_info(Xj, xi):
-    # calculates common panel properties (distance, angles)
-    # INPUTS
-    #   Xj    : X(:,[1,2]) = panel endpoint coordinates
-    #   xi    : control point coordinates (2x1)
-    #   vdir  : direction of dot product, or None
-    #   onmid : true means xi is on the panel midpoint
-    # OUTPUTS
-    #   t, n   : panel-aligned tangent and normal vectors
-    #   x, z   : control point coords in panel-aligned coord system
-    #   d      : panel length
-    #   r1, r2 : distances from panel left/right edges to control point
-    #   theta1, theta2 : left/right angles
-
-    # panel coordinates
-    xj1, zj1 = Xj[0, 0], Xj[1, 0]
-    xj2, zj2 = Xj[0, 1], Xj[1, 1]
-
-    # panel-aligned tangent and normal vectors
-    t = np.array([xj2 - xj1, zj2 - zj1])
-    t /= norm2(t)
-    n = np.array([-t[1], t[0]])
-
-    # control point relative to (xj1,zj1)
-    xz = np.array([(xi[0] - xj1), (xi[1] - zj1)])
-    x = np.dot(xz, t)  # in panel-aligned coord system
-    z = np.dot(xz, n)  # in panel-aligned coord system
-
-    # distances and angles
-    d = dist(xj2 - xj1, zj2 - zj1)  # panel length
-    r1 = dist(x, z)  # left edge to control point
-    r2 = dist(x - d, z)  # right edge to control point
-    theta1 = atan2(z, x)  # left angle
-    theta2 = atan2(z, x - d)  # right angle
-
-    return t, n, x, z, d, r1, r2, theta1, theta2
 
 # ============ GEOMETRY ==============
 def mgeom_flap(geom: Geom, npanel: int, xzhinge, eta) -> Panel:
