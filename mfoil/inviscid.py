@@ -10,7 +10,6 @@ F64Arr = NDArray[np.float64]
 
 class Isol:  # inviscid solution variables
     def __init__(self):
-        self.AIC: F64Arr = np.array([])  # aero influence coeff matrix
         self.gamref: F64Arr = np.array([])  # 0,90-deg alpha vortex strengths at airfoil nodes
         self.gam: F64Arr = np.array([])  # vortex strengths at airfoil nodes (for current alpha)
         self.sstag: float = 0.0  # s location of stagnation point
@@ -95,80 +94,11 @@ def build_gamma(foil: Panel, param, alpha: float, chord=1) -> Isol:
     A[N, N - 1] = 1
 
     # Solve system for unknown vortex strengths
-    isol.AIC = A
-    g = np.linalg.solve(isol.AIC, rhs)
+    g = np.linalg.solve(A, rhs)
 
     isol.gamref = g[0:N, :]  # last value is surf streamfunction
     isol.gam = isol.gamref[:, 0] * cosd(alpha) + isol.gamref[:, 1] * sind(alpha)
     return isol
-
-
-def inviscid_velocity(X: F64Arr, G: F64Arr, Vinf: float, alpha: float, x: F64Arr, dolin: bool):
-    """
-    Returns the inviscid velocity at a point due to gamma on panels and freestream velocity
-
-    Parameters
-    ----------
-    X : (N, 2) ndarray
-        Coordinates of N panel nodes (N-1 panels)
-    G : (N,) ndarray
-        Vector of gamma values at each airfoil node
-    Vinf : float
-        Freestream speed magnitude
-    alpha : float
-        Angle of attack in degrees
-    x : (2,) ndarray
-        Location of the point at which the velocity vector is desired
-    dolin : bool
-        True to also return linearization
-
-    Returns
-    -------
-    V : (2,) ndarray
-        Velocity at the desired point.
-    V_G : (2, N) ndarray, None
-        Linearization of V with respect to G, returned if dolin is True
-
-    Notes
-    -----
-    - Utilizes linear vortex panels on the airfoil
-    - Accounts for trailing edge constant source/vortex panel
-    - Includes the freestream contribution
-    """
-
-    N = X.shape[1]  # number of points
-    V = np.zeros(2)  # velocity
-    if dolin:
-        V_G = np.zeros([2, N])
-    t, hTE, dtdx, tcp, tdp = TE_info(X)  # trailing-edge info
-    # assume x is not a midpoint of a panel (can check for this)
-    for j in range(N - 1):  # loop over panels
-        a, b = panel_linvortex_velocity(X[:, [j, j + 1]], x, None, False)
-        V += a * G[j] + b * G[j + 1]
-        if dolin:
-            V_G[:, j] += a
-            V_G[:, j + 1] += b
-    # TE source influence
-    a = panel_constsource_velocity(X[:, [N - 1, 0]], x, None)
-    f1, f2 = a * (-0.5 * tcp), a * 0.5 * tcp
-    V += f1 * G[0] + f2 * G[N - 1]
-    if dolin:
-        V_G[:, 0] += f1
-        V_G[:, N - 1] += f2
-    # TE vortex influence
-    a, b = panel_linvortex_velocity(X[:, [N - 1, 0]], x, None, False)
-    f1, f2 = (a + b) * (0.5 * tdp), (a + b) * (-0.5 * tdp)
-    V += f1 * G[0] + f2 * G[N - 1]
-    if dolin:
-        V_G[:, 0] += f1
-        V_G[:, N - 1] += f2
-    # freestream influence
-    V += Vinf * np.array([cosd(alpha), sind(alpha)])
-    if dolin:
-        return V, V_G
-    else:
-        return V, None
-
 
 def build_wake(isol: Isol, foil: Panel, oper, wakelen, chord: float = 1):
     # builds wake panels from the inviscid solution
@@ -393,6 +323,73 @@ def rebuild_ue_m(isol: Isol, foil: Panel, wake: Panel):
 
     # ue_m = ue_sigma * sigma_m [(N+Nw) x (N+Nw)] (not sparse)
     isol.ue_m = sparse.spdiags(sgue, 0, N + Nw, N + Nw, 'csr') @ isol.ue_sigma @ isol.sigma_m
+
+
+def inviscid_velocity(X: F64Arr, G: F64Arr, Vinf: float, alpha: float, x: F64Arr, dolin: bool):
+    """
+    Returns the inviscid velocity at a point due to gamma on panels and freestream velocity
+
+    Parameters
+    ----------
+    X : (N, 2) ndarray
+        Coordinates of N panel nodes (N-1 panels)
+    G : (N,) ndarray
+        Vector of gamma values at each airfoil node
+    Vinf : float
+        Freestream speed magnitude
+    alpha : float
+        Angle of attack in degrees
+    x : (2,) ndarray
+        Location of the point at which the velocity vector is desired
+    dolin : bool
+        True to also return linearization
+
+    Returns
+    -------
+    V : (2,) ndarray
+        Velocity at the desired point.
+    V_G : (2, N) ndarray, None
+        Linearization of V with respect to G, returned if dolin is True
+
+    Notes
+    -----
+    - Utilizes linear vortex panels on the airfoil
+    - Accounts for trailing edge constant source/vortex panel
+    - Includes the freestream contribution
+    """
+
+    N = X.shape[1]  # number of points
+    V = np.zeros(2)  # velocity
+    if dolin:
+        V_G = np.zeros([2, N])
+    t, hTE, dtdx, tcp, tdp = TE_info(X)  # trailing-edge info
+    # assume x is not a midpoint of a panel (can check for this)
+    for j in range(N - 1):  # loop over panels
+        a, b = panel_linvortex_velocity(X[:, [j, j + 1]], x, None, False)
+        V += a * G[j] + b * G[j + 1]
+        if dolin:
+            V_G[:, j] += a
+            V_G[:, j + 1] += b
+    # TE source influence
+    a = panel_constsource_velocity(X[:, [N - 1, 0]], x, None)
+    f1, f2 = a * (-0.5 * tcp), a * 0.5 * tcp
+    V += f1 * G[0] + f2 * G[N - 1]
+    if dolin:
+        V_G[:, 0] += f1
+        V_G[:, N - 1] += f2
+    # TE vortex influence
+    a, b = panel_linvortex_velocity(X[:, [N - 1, 0]], x, None, False)
+    f1, f2 = (a + b) * (0.5 * tdp), (a + b) * (-0.5 * tdp)
+    V += f1 * G[0] + f2 * G[N - 1]
+    if dolin:
+        V_G[:, 0] += f1
+        V_G[:, N - 1] += f2
+    # freestream influence
+    V += Vinf * np.array([cosd(alpha), sind(alpha)])
+    if dolin:
+        return V, V_G
+    else:
+        return V, None
 
 
 def panel_info(Xj, xi):
