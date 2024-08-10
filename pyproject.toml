@@ -41,10 +41,10 @@ app = [
 
 
 [tool.ruff]
-line-length = 120
+line-length = 150
 unfixable = ["F401"]
 ignore = ["F811"]#, "F403", "F405"]
-indent-width = 2
+indent-width = 4
 
 [tool.ruff.format]
 # Like Black, use double quotes for strings.
